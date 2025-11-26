@@ -15,15 +15,20 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import { useLocation } from "wouter";
+import { useUploadProgress } from "@/hooks/useUploadProgress";
 
 export default function UploadPage() {
   const [file, setFile] = useState<File | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const { toast } = useToast();
   const [, setLocation] = useLocation();
+  const { startUpload, updateProgress, completeUpload, clearUpload } = useUploadProgress();
 
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
+      startUpload(file.name);
+      updateProgress(5, "Parsing file...");
+      
       const formData = new FormData();
       formData.append("file", file);
       
@@ -41,6 +46,10 @@ export default function UploadPage() {
       return response.json();
     },
     onSuccess: (data) => {
+      updateProgress(100, "Complete");
+      completeUpload();
+      setTimeout(() => clearUpload(), 2000);
+      
       toast({
         title: "Upload Successful",
         description: `Processed ${data.totalTenders} tenders (${data.gemCount} GEM, ${data.nonGemCount} Non-GEM)`,
@@ -51,6 +60,7 @@ export default function UploadPage() {
       setFile(null);
     },
     onError: (error: Error) => {
+      clearUpload();
       toast({
         title: "Upload Failed",
         description: error.message,

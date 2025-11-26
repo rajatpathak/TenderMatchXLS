@@ -8,6 +8,8 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { AppSidebar } from "@/components/AppSidebar";
 import { useAuth } from "@/hooks/useAuth";
+import { UploadProgressProvider, useUploadProgress } from "@/hooks/useUploadProgress";
+import { Progress } from "@/components/ui/progress";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/Landing";
 import Dashboard from "@/pages/Dashboard";
@@ -30,6 +32,26 @@ import {
   MissedTendersPage,
 } from "@/pages/TenderCategoryPage";
 
+function HeaderContent() {
+  const { upload } = useUploadProgress();
+
+  return (
+    <div className="flex items-center justify-between h-14 px-4 border-b border-border bg-background shrink-0 gap-4">
+      <SidebarTrigger data-testid="button-sidebar-toggle" />
+      {upload?.isUploading && (
+        <div className="flex-1 max-w-xs flex items-center gap-2">
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-muted-foreground truncate">{upload.fileName}</p>
+            <Progress value={upload.progress} className="h-1 mt-1" />
+          </div>
+          <span className="text-xs text-muted-foreground font-mono whitespace-nowrap">{upload.progress}%</span>
+        </div>
+      )}
+      <ThemeToggle />
+    </div>
+  );
+}
+
 function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
   const style = {
     "--sidebar-width": "16rem",
@@ -41,10 +63,7 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
       <div className="flex h-screen w-full">
         <AppSidebar />
         <div className="flex flex-col flex-1 overflow-hidden">
-          <header className="flex items-center justify-between h-14 px-4 border-b border-border bg-background shrink-0">
-            <SidebarTrigger data-testid="button-sidebar-toggle" />
-            <ThemeToggle />
-          </header>
+          <HeaderContent />
           <main className="flex-1 overflow-hidden bg-background">
             {children}
           </main>
@@ -105,8 +124,10 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <TooltipProvider>
-          <Toaster />
-          <Router />
+          <UploadProgressProvider>
+            <Toaster />
+            <Router />
+          </UploadProgressProvider>
         </TooltipProvider>
       </ThemeProvider>
     </QueryClientProvider>
