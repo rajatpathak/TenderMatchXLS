@@ -275,11 +275,11 @@ export default function AssignmentsHub() {
   };
 
   const stageCounts = {
-    all: filteredAssignments.length,
-    assigned: filteredAssignments.filter(a => a.currentStage === "assigned").length,
-    in_progress: filteredAssignments.filter(a => a.currentStage === "in_progress").length,
-    ready_for_review: filteredAssignments.filter(a => a.currentStage === "ready_for_review").length,
-    submitted: filteredAssignments.filter(a => a.currentStage === "submitted").length,
+    all: assignments.length,
+    assigned: assignments.filter(a => a.currentStage === "assigned").length,
+    in_progress: assignments.filter(a => a.currentStage === "in_progress").length,
+    ready_for_review: assignments.filter(a => a.currentStage === "ready_for_review").length,
+    submitted: assignments.filter(a => a.currentStage === "submitted").length,
   };
 
   const overdueCount = useMemo(() => {
@@ -467,9 +467,9 @@ export default function AssignmentsHub() {
       </div>
 
       <div className="flex-1 overflow-hidden flex flex-col">
-        <div className="p-4 border-b border-border space-y-4">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="">
-            <TabsList>
+        <div className="p-4 border-b border-border">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="w-full justify-start">
               <TabsTrigger value="all" data-testid="tab-all">
                 All ({stageCounts.all})
               </TabsTrigger>
@@ -487,45 +487,44 @@ export default function AssignmentsHub() {
               </TabsTrigger>
             </TabsList>
           </Tabs>
+        </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="relative flex-1 max-w-xs">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by title or T247 ID..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
-                data-testid="input-search-assignments"
-              />
-            </div>
-            <Filter className="w-4 h-4 text-muted-foreground" />
-            <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-              <SelectTrigger className="w-32" data-testid="filter-priority">
-                <SelectValue placeholder="Priority" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Priority</SelectItem>
-                <SelectItem value="urgent">Urgent</SelectItem>
-                <SelectItem value="high">High</SelectItem>
-                <SelectItem value="normal">Normal</SelectItem>
-                <SelectItem value="low">Low</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
-              <SelectTrigger className="w-40" data-testid="filter-assignee">
-                <SelectValue placeholder="Assignee" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Assignees</SelectItem>
-                {teamMembers.filter(m => m.isActive).map(member => (
-                  <SelectItem key={member.id} value={member.id.toString()}>
-                    {member.fullName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        <div className="p-4 border-b border-border flex items-center gap-2">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by title or T247 ID..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9"
+              data-testid="input-search-assignments"
+            />
           </div>
+          <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+            <SelectTrigger className="w-32" data-testid="filter-priority">
+              <SelectValue placeholder="Priority" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Priority</SelectItem>
+              <SelectItem value="urgent">Urgent</SelectItem>
+              <SelectItem value="high">High</SelectItem>
+              <SelectItem value="normal">Normal</SelectItem>
+              <SelectItem value="low">Low</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
+            <SelectTrigger className="w-40" data-testid="filter-assignee">
+              <SelectValue placeholder="Assignee" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Assignees</SelectItem>
+              {teamMembers.filter(m => m.isActive).map(member => (
+                <SelectItem key={member.id} value={member.id.toString()}>
+                  {member.fullName}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <ScrollArea className="flex-1">
