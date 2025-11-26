@@ -20,7 +20,8 @@ import {
   EligibleTendersPage, 
   NotRelevantTendersPage, 
   NotEligibleTendersPage, 
-  ManualReviewTendersPage 
+  ManualReviewTendersPage,
+  MissedTendersPage,
 } from "@/pages/TenderCategoryPage";
 
 function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
@@ -77,6 +78,7 @@ function Router() {
         <Route path="/tenders/not-relevant" component={NotRelevantTendersPage} />
         <Route path="/tenders/not-eligible" component={NotEligibleTendersPage} />
         <Route path="/tenders/manual-review" component={ManualReviewTendersPage} />
+        <Route path="/tenders/missed" component={MissedTendersPage} />
         <Route path="/corrigendum" component={Corrigendum} />
         <Route path="/unable-to-analyse" component={UnableToAnalyse} />
         <Route path="/settings" component={Settings} />

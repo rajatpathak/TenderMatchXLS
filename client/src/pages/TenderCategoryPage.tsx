@@ -13,11 +13,12 @@ import {
   FileSearch,
   ChevronLeft,
   ChevronRight,
+  Clock,
 } from "lucide-react";
 import type { Tender } from "@shared/schema";
 
 interface TenderCategoryPageProps {
-  status: "eligible" | "not_eligible" | "not_relevant" | "manual_review";
+  status: "eligible" | "not_eligible" | "not_relevant" | "manual_review" | "missed";
   title: string;
   description: string;
 }
@@ -42,6 +43,11 @@ const categoryConfig = {
     icon: FileSearch,
     color: "text-amber-600 dark:text-amber-400",
     bgColor: "bg-amber-500/10",
+  },
+  missed: {
+    icon: Clock,
+    color: "text-slate-600 dark:text-slate-400",
+    bgColor: "bg-slate-500/10",
   },
 };
 
@@ -274,6 +280,16 @@ export function ManualReviewTendersPage() {
       status="manual_review"
       title="Manual Review"
       description="Tenders requiring PDF upload for eligibility analysis"
+    />
+  );
+}
+
+export function MissedTendersPage() {
+  return (
+    <TenderCategoryPage
+      status="missed"
+      title="Missed Tenders"
+      description="Tenders with deadlines that have passed"
     />
   );
 }

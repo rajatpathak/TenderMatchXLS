@@ -1,4 +1,5 @@
 import { useLocation, Link } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import {
   Sidebar,
   SidebarContent,
@@ -9,10 +10,12 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuBadge,
   SidebarFooter,
 } from "@/components/ui/sidebar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { 
   LayoutDashboard, 
   Upload, 
@@ -25,67 +28,107 @@ import {
   XCircle,
   Ban,
   FileSearch,
+  Clock,
+  RefreshCw,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest } from "@/lib/queryClient";
+import { useReanalyzeProgress } from "@/hooks/useReanalyzeProgress";
 
-const mainMenuItems = [
-  {
-    title: "Dashboard",
-    url: "/",
-    icon: LayoutDashboard,
-  },
-  {
-    title: "Upload Excel",
-    url: "/upload",
-    icon: Upload,
-  },
-  {
-    title: "Upload History",
-    url: "/history",
-    icon: History,
-  },
-];
-
-const tenderCategories = [
-  {
-    title: "Eligible",
-    url: "/tenders/eligible",
-    icon: CheckCircle,
-  },
-  {
-    title: "Not Relevant",
-    url: "/tenders/not-relevant",
-    icon: Ban,
-  },
-  {
-    title: "Not Eligible",
-    url: "/tenders/not-eligible",
-    icon: XCircle,
-  },
-  {
-    title: "Manual Review",
-    url: "/tenders/manual-review",
-    icon: FileSearch,
-  },
-  {
-    title: "Corrigendum",
-    url: "/corrigendum",
-    icon: FileStack,
-  },
-];
-
-const settingsItems = [
-  {
-    title: "Settings",
-    url: "/settings",
-    icon: Settings,
-  },
-];
+interface Stats {
+  total: number;
+  eligible: number;
+  notRelevant: number;
+  notEligible: number;
+  manualReview: number;
+  missed: number;
+  corrigendum: number;
+  todayUploads: number;
+}
 
 export function AppSidebar() {
   const [location] = useLocation();
   const { user } = useAuth();
+  const { progress, isRunning } = useReanalyzeProgress();
+
+  const { data: stats } = useQuery<Stats>({
+    queryKey: ['/api/stats'],
+    refetchInterval: isRunning ? 2000 : 30000,
+  });
+
+  const mainMenuItems = [
+    {
+      title: "Dashboard",
+      url: "/",
+      icon: LayoutDashboard,
+      badge: stats?.total,
+    },
+    {
+      title: "Upload Excel",
+      url: "/upload",
+      icon: Upload,
+      badge: stats?.todayUploads ? `+${stats.todayUploads}` : undefined,
+    },
+    {
+      title: "Upload History",
+      url: "/history",
+      icon: History,
+      badge: undefined,
+    },
+  ];
+
+  const tenderCategories = [
+    {
+      title: "Eligible",
+      url: "/tenders/eligible",
+      icon: CheckCircle,
+      badge: stats?.eligible,
+      color: "text-green-600",
+    },
+    {
+      title: "Not Relevant",
+      url: "/tenders/not-relevant",
+      icon: Ban,
+      badge: stats?.notRelevant,
+      color: "text-orange-500",
+    },
+    {
+      title: "Not Eligible",
+      url: "/tenders/not-eligible",
+      icon: XCircle,
+      badge: stats?.notEligible,
+      color: "text-red-500",
+    },
+    {
+      title: "Manual Review",
+      url: "/tenders/manual-review",
+      icon: FileSearch,
+      badge: stats?.manualReview,
+      color: "text-blue-500",
+    },
+    {
+      title: "Missed Tenders",
+      url: "/tenders/missed",
+      icon: Clock,
+      badge: stats?.missed,
+      color: "text-gray-500",
+    },
+    {
+      title: "Corrigendum",
+      url: "/corrigendum",
+      icon: FileStack,
+      badge: stats?.corrigendum,
+      color: "text-purple-500",
+    },
+  ];
+
+  const settingsItems = [
+    {
+      title: "Settings",
+      url: "/settings",
+      icon: Settings,
+    },
+  ];
 
   const getInitials = () => {
     if (user?.firstName && user?.lastName) {
@@ -106,6 +149,24 @@ export function AppSidebar() {
           </div>
           <span className="text-lg font-semibold text-sidebar-foreground">TenderMatch</span>
         </div>
+        
+        {isRunning && (
+          <div className="mt-3 p-2 rounded-md bg-sidebar-accent/50">
+            <div className="flex items-center gap-2 text-xs text-sidebar-foreground">
+              <RefreshCw className="w-3 h-3 animate-spin" />
+              <span>Re-analyzing...</span>
+              <span className="ml-auto font-medium">
+                {progress.processed}/{progress.total}
+              </span>
+            </div>
+            <div className="mt-1 w-full bg-sidebar-accent rounded-full h-1.5">
+              <div 
+                className="bg-sidebar-primary h-1.5 rounded-full transition-all duration-300" 
+                style={{ width: `${progress.total > 0 ? (progress.processed / progress.total) * 100 : 0}%` }}
+              />
+            </div>
+          </div>
+        )}
       </SidebarHeader>
       
       <SidebarContent>
@@ -127,6 +188,13 @@ export function AppSidebar() {
                         <span>{item.title}</span>
                       </Link>
                     </SidebarMenuButton>
+                    {item.badge !== undefined && item.badge !== 0 && (
+                      <SidebarMenuBadge>
+                        <Badge variant="secondary" className="text-[10px] h-5 min-w-5 px-1.5">
+                          {item.badge}
+                        </Badge>
+                      </SidebarMenuBadge>
+                    )}
                   </SidebarMenuItem>
                 );
               })}
@@ -148,10 +216,17 @@ export function AppSidebar() {
                       data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
                     >
                       <Link href={item.url}>
-                        <item.icon className="w-4 h-4" />
+                        <item.icon className={`w-4 h-4 ${item.color}`} />
                         <span>{item.title}</span>
                       </Link>
                     </SidebarMenuButton>
+                    {item.badge !== undefined && item.badge !== 0 && (
+                      <SidebarMenuBadge>
+                        <Badge variant="secondary" className="text-[10px] h-5 min-w-5 px-1.5">
+                          {item.badge}
+                        </Badge>
+                      </SidebarMenuBadge>
+                    )}
                   </SidebarMenuItem>
                 );
               })}
@@ -214,11 +289,9 @@ export function AppSidebar() {
             onClick={async () => {
               try {
                 await apiRequest("POST", "/api/logout");
-                // Force full page reload to clear all state and redirect to login
                 window.location.replace("/");
               } catch (error) {
                 console.error("Logout failed:", error);
-                // Force reload even on error to attempt logout
                 window.location.replace("/");
               }
             }}
