@@ -465,9 +465,80 @@ export function TenderDetailModal({ tender, open, onClose, onViewCorrigendum }: 
               <>
                 <Separator />
                 <div>
-                  <h4 className="text-sm font-semibold text-foreground mb-3">Eligibility Criteria</h4>
-                  <div className="rounded-lg bg-muted/50 p-4 text-sm text-foreground whitespace-pre-wrap">
-                    {tender.eligibilityCriteria}
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="p-1.5 rounded-md bg-amber-500/10">
+                      <FileText className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                    </div>
+                    <h4 className="text-sm font-semibold text-foreground">Eligibility Criteria</h4>
+                  </div>
+                  <div className="rounded-lg border-2 border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/10 p-4">
+                    <div className="space-y-3">
+                      {tender.eligibilityCriteria.split(/[•\n]/).filter(item => item.trim()).map((item, index) => {
+                        const trimmedItem = item.trim();
+                        if (!trimmedItem) return null;
+                        
+                        const hasTurnover = /turnover|lakh|crore|financial/i.test(trimmedItem);
+                        const hasExperience = /experience|year|years/i.test(trimmedItem);
+                        const hasBlacklist = /black.?list|ban|debar/i.test(trimmedItem);
+                        const isHeading = trimmedItem.includes(':') && !trimmedItem.includes('should') && trimmedItem.length < 150;
+                        
+                        if (isHeading && !hasTurnover && !hasExperience) {
+                          return (
+                            <div key={index} className="font-medium text-foreground text-sm border-b border-amber-200 dark:border-amber-700 pb-2 mb-2">
+                              {trimmedItem}
+                            </div>
+                          );
+                        }
+                        
+                        return (
+                          <div 
+                            key={index} 
+                            className={`flex items-start gap-3 text-sm rounded-md p-2 -mx-2 ${
+                              hasTurnover 
+                                ? 'bg-blue-500/10 border border-blue-200 dark:border-blue-800' 
+                                : hasExperience 
+                                  ? 'bg-purple-500/10 border border-purple-200 dark:border-purple-800'
+                                  : hasBlacklist
+                                    ? 'bg-red-500/10 border border-red-200 dark:border-red-800'
+                                    : ''
+                            }`}
+                          >
+                            <div className={`mt-1 w-2 h-2 rounded-full shrink-0 ${
+                              hasTurnover 
+                                ? 'bg-blue-500' 
+                                : hasExperience 
+                                  ? 'bg-purple-500'
+                                  : hasBlacklist
+                                    ? 'bg-red-500'
+                                    : 'bg-amber-500'
+                            }`} />
+                            <span className={`${
+                              hasTurnover || hasExperience || hasBlacklist 
+                                ? 'font-medium text-foreground' 
+                                : 'text-muted-foreground'
+                            }`}>
+                              {trimmedItem}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  
+                  {/* Legend */}
+                  <div className="flex flex-wrap gap-4 mt-3 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2 h-2 rounded-full bg-blue-500" />
+                      <span>Turnover Related</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2 h-2 rounded-full bg-purple-500" />
+                      <span>Experience Required</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2 h-2 rounded-full bg-red-500" />
+                      <span>Restrictions</span>
+                    </div>
                   </div>
                 </div>
               </>
