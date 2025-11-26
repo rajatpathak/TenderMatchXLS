@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,14 +17,24 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import { useLocation } from "wouter";
 
+interface ProgressStatus {
+  isRunning: boolean;
+  status: string;
+  processed: number;
+  total: number;
+  uploadId?: number;
+}
+
 export default function UploadPage() {
   const [file, setFile] = useState<File | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [progress, setProgress] = useState<ProgressStatus | null>(null);
   const { toast } = useToast();
   const [, setLocation] = useLocation();
 
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
+      setProgress(null);
       const formData = new FormData();
       formData.append("file", file);
       
@@ -42,6 +52,7 @@ export default function UploadPage() {
       return response.json();
     },
     onSuccess: (data) => {
+      setProgress(null);
       toast({
         title: "Upload Successful",
         description: `Processed ${data.totalTenders} tenders (${data.gemCount} GEM, ${data.nonGemCount} Non-GEM)`,
@@ -52,6 +63,7 @@ export default function UploadPage() {
       setFile(null);
     },
     onError: (error: Error) => {
+      setProgress(null);
       toast({
         title: "Upload Failed",
         description: error.message,
@@ -59,6 +71,24 @@ export default function UploadPage() {
       });
     },
   });
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (uploadMutation.isPending) {
+      interval = setInterval(async () => {
+        try {
+          const res = await fetch("/api/reanalyze-status", { credentials: "include" });
+          if (res.ok) {
+            const data = await res.json();
+            setProgress(data);
+          }
+        } catch (e) {
+          // Silent fail, progress polling is non-critical
+        }
+      }, 500);
+    }
+    return () => clearInterval(interval);
+  }, [uploadMutation.isPending]);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -189,12 +219,16 @@ export default function UploadPage() {
               {uploadMutation.isPending && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Processing file...</span>
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span className="text-muted-foreground">
+                      {progress?.status || "Processing file..."}
+                    </span>
+                    <span className="text-xs text-muted-foreground font-mono">
+                      {progress ? `${progress.processed}/${progress.total}` : ""}
+                    </span>
                   </div>
-                  <Progress value={undefined} className="h-2" />
+                  <Progress value={progress ? (progress.processed / progress.total) * 100 : 0} className="h-2" />
                   <p className="text-xs text-muted-foreground">
-                    Parsing sheets and analyzing eligibility criteria...
+                    {progress ? `${Math.round((progress.processed / progress.total) * 100)}% complete` : "Initializing..."}
                   </p>
                 </div>
               )}
