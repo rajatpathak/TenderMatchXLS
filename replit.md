@@ -56,8 +56,15 @@ Tenders progress through the following stages after assignment:
 
 ## User Roles
 - **Admin**: Full access to all features including team management
-- **Manager**: Can assign tenders and review submissions
-- **Bidder**: Can update workflow status on assigned tenders
+- **Manager**: Can assign tenders and review submissions, assign tenders to bidders
+- **Bidder**: Can update workflow status on assigned tenders, can self-assign (claim) unassigned eligible tenders
+
+## Tender Assignment Flow
+- Managers/Admins can assign eligible tenders to any bidder via the "Assign" button on tender cards
+- Bidders can view unassigned tenders in the "Available to Claim" tab in My Work page
+- Bidders can claim unassigned tenders by clicking the "Claim Tender" button
+- Backend prevents duplicate assignments (returns 409 Conflict if tender already assigned)
+- After assignment, the tender appears in the bidder's My Work queue with "Assigned" stage
 
 ## Eligibility Matching Logic
 1. Core service detection checks if tender matches IT/Software services
