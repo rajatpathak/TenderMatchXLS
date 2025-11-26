@@ -54,7 +54,10 @@ export interface IStorage {
   updateTenderDocument(id: number, doc: Partial<InsertTenderDocument>): Promise<TenderDocument | undefined>;
   
   // Stats
-  getStats(): Promise<{ total: number; fullMatch: number; pendingAnalysis: number; todayUploads: number }>;
+  getStats(): Promise<{ total: number; fullMatch: number; pendingAnalysis: number; notEligible: number; todayUploads: number }>;
+  
+  // Data management
+  deleteAllData(): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -246,6 +249,15 @@ export class DatabaseStorage implements IStorage {
       notEligible: Number(notEligibleResult?.count || 0),
       todayUploads: Number(todayResult?.count || 0),
     };
+  }
+
+  // Data management
+  async deleteAllData(): Promise<void> {
+    // Delete in order to respect foreign key constraints
+    await db.delete(corrigendumChanges);
+    await db.delete(tenderDocuments);
+    await db.delete(tenders);
+    await db.delete(excelUploads);
   }
 }
 

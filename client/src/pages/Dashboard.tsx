@@ -1,13 +1,26 @@
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { TenderCard } from "@/components/TenderCard";
 import { FiltersPanel, getDefaultFilters, type FiltersState } from "@/components/FiltersPanel";
 import { TenderDetailModal } from "@/components/TenderDetailModal";
 import { UploadModal } from "@/components/UploadModal";
+import { useToast } from "@/hooks/use-toast";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 import { 
   Search, 
   Upload, 
@@ -16,7 +29,9 @@ import {
   AlertCircle,
   TrendingUp,
   Filter,
-  X
+  X,
+  Trash2,
+  Loader2
 } from "lucide-react";
 import type { Tender } from "@shared/schema";
 
@@ -34,6 +49,7 @@ export default function Dashboard() {
   const [selectedTender, setSelectedTender] = useState<Tender | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showFilters, setShowFilters] = useState(true);
+  const { toast } = useToast();
 
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
     queryKey: ["/api/stats"],
@@ -41,6 +57,28 @@ export default function Dashboard() {
 
   const { data: tenders = [], isLoading: tendersLoading } = useQuery<Tender[]>({
     queryKey: ["/api/tenders"],
+  });
+
+  const deleteAllMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("DELETE", "/api/data/all");
+    },
+    onSuccess: () => {
+      toast({
+        title: "Data Deleted",
+        description: "All tender data has been removed successfully",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/uploads"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Delete Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
   });
 
   const filteredTenders = useMemo(() => {
@@ -147,13 +185,50 @@ export default function Dashboard() {
               View and filter your analyzed tenders
             </p>
           </div>
-          <Button 
-            onClick={() => setShowUploadModal(true)}
-            data-testid="button-upload-excel"
-          >
-            <Upload className="w-4 h-4 mr-2" />
-            Upload Excel
-          </Button>
+          <div className="flex items-center gap-2">
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button 
+                  variant="destructive"
+                  disabled={deleteAllMutation.isPending || (stats?.total || 0) === 0}
+                  data-testid="button-delete-all"
+                >
+                  {deleteAllMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4 mr-2" />
+                  )}
+                  Delete All
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete All Data?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete all {stats?.total || 0} tenders and upload history. 
+                    This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => deleteAllMutation.mutate()}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    data-testid="button-confirm-delete"
+                  >
+                    Delete All
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+            <Button 
+              onClick={() => setShowUploadModal(true)}
+              data-testid="button-upload-excel"
+            >
+              <Upload className="w-4 h-4 mr-2" />
+              Upload Excel
+            </Button>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

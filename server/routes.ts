@@ -4,7 +4,7 @@ import { createRequire } from "module";
 import multer from "multer";
 import * as XLSX from "xlsx";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./replitAuth";
+import { setupAuth, isAuthenticated } from "./simpleAuth";
 import { analyzeEligibility, detectCorrigendumChanges } from "./eligibilityMatcher";
 import type { InsertTender } from "@shared/schema";
 
@@ -346,15 +346,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Setup auth
   await setupAuth(app);
 
-  // Auth routes
-  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
+  // Delete all data endpoint
+  app.delete('/api/data/all', isAuthenticated, async (req, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      res.json(user);
+      await storage.deleteAllData();
+      res.json({ success: true, message: "All data deleted successfully" });
     } catch (error) {
-      console.error("Error fetching user:", error);
-      res.status(500).json({ message: "Failed to fetch user" });
+      console.error("Error deleting data:", error);
+      res.status(500).json({ message: "Failed to delete data" });
     }
   });
 
