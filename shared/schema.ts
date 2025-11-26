@@ -96,6 +96,11 @@ export const excelUploads = pgTable("excel_uploads", {
   totalTenders: integer("total_tenders").default(0),
   gemCount: integer("gem_count").default(0),
   nonGemCount: integer("non_gem_count").default(0),
+  eligibleCount: integer("eligible_count").default(0),
+  notEligibleCount: integer("not_eligible_count").default(0),
+  notRelevantCount: integer("not_relevant_count").default(0),
+  manualReviewCount: integer("manual_review_count").default(0),
+  missedCount: integer("missed_count").default(0),
   processedAt: timestamp("processed_at"),
 });
 
@@ -423,3 +428,26 @@ export type TenderWithAssignment = Tender & {
   };
   submission?: BiddingSubmission;
 };
+
+// Audit logs table for admin tracking
+export const auditLogs = pgTable("audit_logs", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  action: varchar("action").notNull(), // login, logout, upload, assign, override, team_add, team_update, etc.
+  category: varchar("category").notNull(), // auth, tender, team, config, workflow
+  userId: varchar("user_id"), // Can be null for system actions
+  userName: varchar("user_name"),
+  targetType: varchar("target_type"), // tender, team_member, assignment, etc.
+  targetId: varchar("target_id"),
+  targetName: varchar("target_name"),
+  details: text("details"), // JSON string with additional info
+  ipAddress: varchar("ip_address"),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
+export type AuditLog = typeof auditLogs.$inferSelect;

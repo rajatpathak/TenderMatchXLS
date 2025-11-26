@@ -21,6 +21,7 @@ import WorkflowPage from "@/pages/WorkflowPage";
 import SubmittedTenders from "@/pages/SubmittedTenders";
 import AssignmentsHub from "@/pages/AssignmentsHub";
 import MyWork from "@/pages/MyWork";
+import AuditLogs from "@/pages/AuditLogs";
 import { 
   EligibleTendersPage, 
   NotRelevantTendersPage, 
@@ -91,6 +92,7 @@ function Router() {
         <Route path="/my-work" component={MyWork} />
         <Route path="/submissions" component={SubmittedTenders} />
         <Route path="/team" component={TeamManagement} />
+        <Route path="/audit-logs" component={AuditLogs} />
         <Route path="/settings" component={Settings} />
         <Route component={NotFound} />
       </Switch>

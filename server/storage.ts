@@ -10,6 +10,7 @@ import {
   tenderAssignments,
   biddingSubmissions,
   workflowHistory,
+  auditLogs,
   type User,
   type UpsertUser,
   type Tender,
@@ -32,6 +33,8 @@ import {
   type InsertBiddingSubmission,
   type WorkflowHistory,
   type InsertWorkflowHistory,
+  type AuditLog,
+  type InsertAuditLog,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, sql } from "drizzle-orm";
@@ -135,6 +138,10 @@ export interface IStorage {
     submitted: number;
     totalBudget: number;
   }>;
+  
+  // Audit log operations
+  getAuditLogs(filters?: { category?: string; action?: string; limit?: number }): Promise<AuditLog[]>;
+  createAuditLog(log: InsertAuditLog): Promise<AuditLog>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -800,6 +807,31 @@ export class DatabaseStorage implements IStorage {
       submitted: Number(submittedResult?.count || 0),
       totalBudget: Number(budgetResult?.total || 0),
     };
+  }
+
+  // Audit log operations
+  async getAuditLogs(filters?: { category?: string; action?: string; limit?: number }): Promise<AuditLog[]> {
+    let query = db.select().from(auditLogs);
+    
+    const conditions = [];
+    if (filters?.category) {
+      conditions.push(eq(auditLogs.category, filters.category));
+    }
+    if (filters?.action) {
+      conditions.push(eq(auditLogs.action, filters.action));
+    }
+    
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as any;
+    }
+    
+    const result = await query.orderBy(desc(auditLogs.createdAt)).limit(filters?.limit || 100);
+    return result;
+  }
+
+  async createAuditLog(log: InsertAuditLog): Promise<AuditLog> {
+    const [created] = await db.insert(auditLogs).values(log).returning();
+    return created;
   }
 }
 

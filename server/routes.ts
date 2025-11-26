@@ -937,6 +937,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       let gemCount = 0;
       let nonGemCount = 0;
+      let eligibleCount = 0;
+      let notEligibleCount = 0;
+      let notRelevantCount = 0;
+      let manualReviewCount = 0;
+      let missedCount = 0;
       const processedTenders: any[] = [];
 
       // Process all sheets
@@ -1024,6 +1029,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
             
             const createdTender = await storage.createTender(fullTenderData);
             processedTenders.push(createdTender);
+            
+            // Count by status
+            const status = matchResult.eligibilityStatus;
+            if (status === 'eligible') eligibleCount++;
+            else if (status === 'not_eligible') notEligibleCount++;
+            else if (status === 'not_relevant') notRelevantCount++;
+            else if (status === 'manual_review') manualReviewCount++;
+            else if (status === 'missed') missedCount++;
           }
           
           if (tenderType === 'gem') {
@@ -1096,6 +1109,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
             
             const createdTender = await storage.createTender(fullTenderData);
             processedTenders.push(createdTender);
+            
+            // Count by status
+            const status = matchResult.eligibilityStatus;
+            if (status === 'eligible') eligibleCount++;
+            else if (status === 'not_eligible') notEligibleCount++;
+            else if (status === 'not_relevant') notRelevantCount++;
+            else if (status === 'manual_review') manualReviewCount++;
+            else if (status === 'missed') missedCount++;
           }
           
           nonGemCount++;
@@ -1107,6 +1128,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         totalTenders: gemCount + nonGemCount,
         gemCount,
         nonGemCount,
+        eligibleCount,
+        notEligibleCount,
+        notRelevantCount,
+        manualReviewCount,
+        missedCount,
       });
 
       res.json({
@@ -1795,6 +1821,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching workflow stats:", error);
       res.status(500).json({ message: "Failed to fetch workflow stats" });
+    }
+  });
+
+  // Audit Log Routes (Admin only)
+  app.get('/api/audit-logs', isAuthenticated, async (req: any, res) => {
+    try {
+      // Check if user is admin
+      const user = req.user;
+      if (user.role !== 'admin') {
+        return res.status(403).json({ message: "Access denied. Admin only." });
+      }
+
+      const { category, action, limit } = req.query;
+      const logs = await storage.getAuditLogs({
+        category: category as string,
+        action: action as string,
+        limit: limit ? parseInt(limit as string) : 100,
+      });
+      res.json(logs);
+    } catch (error) {
+      console.error("Error fetching audit logs:", error);
+      res.status(500).json({ message: "Failed to fetch audit logs" });
     }
   });
 

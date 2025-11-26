@@ -35,6 +35,7 @@ import {
   Send,
   ClipboardList,
   Briefcase,
+  Shield,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest } from "@/lib/queryClient";
@@ -348,6 +349,20 @@ export function AppSidebar() {
                   </SidebarMenuItem>
                 );
               })}
+              {user?.role === 'admin' && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton 
+                    asChild
+                    isActive={location === '/audit-logs'}
+                    data-testid="nav-audit-logs"
+                  >
+                    <Link href="/audit-logs">
+                      <Shield className="w-4 h-4" />
+                      <span>Audit Logs</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
