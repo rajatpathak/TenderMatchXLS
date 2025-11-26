@@ -241,6 +241,119 @@ const uploadProgressStore = new Map<number, {
   clients: Set<any>;
 }>();
 
+// Store for re-analyze progress tracking
+const reanalyzeProgressStore = {
+  isRunning: false,
+  total: 0,
+  processed: 0,
+  updated: 0,
+  skipped: 0,
+  errors: 0,
+  startTime: 0,
+  status: 'idle' as 'idle' | 'running' | 'complete' | 'error',
+  message: '',
+  clients: new Set<any>(),
+};
+
+function sendReanalyzeProgress() {
+  const elapsed = (Date.now() - reanalyzeProgressStore.startTime) / 1000;
+  const rowsPerSecond = reanalyzeProgressStore.processed / Math.max(elapsed, 0.1);
+  const remainingRows = reanalyzeProgressStore.total - reanalyzeProgressStore.processed;
+  const estimatedTimeRemaining = remainingRows / Math.max(rowsPerSecond, 0.1);
+
+  const data = {
+    type: reanalyzeProgressStore.status,
+    total: reanalyzeProgressStore.total,
+    processed: reanalyzeProgressStore.processed,
+    updated: reanalyzeProgressStore.updated,
+    skipped: reanalyzeProgressStore.skipped,
+    errors: reanalyzeProgressStore.errors,
+    estimatedTimeRemaining: Math.max(0, estimatedTimeRemaining),
+    message: reanalyzeProgressStore.message,
+  };
+
+  const message = `data: ${JSON.stringify(data)}\n\n`;
+  reanalyzeProgressStore.clients.forEach(client => {
+    try {
+      client.write(message);
+    } catch (e) {
+      // Client disconnected
+    }
+  });
+}
+
+async function reanalyzeAllTendersAsync() {
+  try {
+    const criteria = await storage.getCompanyCriteria();
+    const negativeKeywords = await storage.getNegativeKeywords();
+    const allTenders = await storage.getTenders();
+    
+    reanalyzeProgressStore.total = allTenders.length;
+    reanalyzeProgressStore.processed = 0;
+    reanalyzeProgressStore.updated = 0;
+    reanalyzeProgressStore.skipped = 0;
+    reanalyzeProgressStore.errors = 0;
+    reanalyzeProgressStore.startTime = Date.now();
+    reanalyzeProgressStore.status = 'running';
+    
+    sendReanalyzeProgress();
+    
+    for (const tender of allTenders) {
+      try {
+        if (tender.isManualOverride) {
+          reanalyzeProgressStore.skipped++;
+        } else {
+          const result = analyzeEligibility(
+            tender,
+            criteria,
+            negativeKeywords,
+            tender.isMsmeExempted || false,
+            tender.isStartupExempted || false,
+            tender.similarCategory || null
+          );
+          
+          await storage.updateTender(tender.id, {
+            matchPercentage: result.matchPercentage,
+            isMsmeExempted: result.isMsmeExempted,
+            isStartupExempted: result.isStartupExempted,
+            tags: result.tags,
+            analysisStatus: result.analysisStatus,
+            eligibilityStatus: result.eligibilityStatus,
+            notRelevantKeyword: result.notRelevantKeyword,
+          });
+          
+          reanalyzeProgressStore.updated++;
+        }
+      } catch (err) {
+        console.error(`Error re-analyzing tender ${tender.id}:`, err);
+        reanalyzeProgressStore.errors++;
+      }
+      
+      reanalyzeProgressStore.processed++;
+      
+      // Send progress update every 5 items or if less than 20 total
+      if (reanalyzeProgressStore.processed % 5 === 0 || allTenders.length < 20) {
+        sendReanalyzeProgress();
+      }
+    }
+    
+    // Also check for missed deadlines
+    await storage.updateMissedDeadlines();
+    
+    reanalyzeProgressStore.status = 'complete';
+    reanalyzeProgressStore.message = `Re-analyzed ${reanalyzeProgressStore.updated} tenders (${reanalyzeProgressStore.skipped} skipped, ${reanalyzeProgressStore.errors} errors)`;
+    sendReanalyzeProgress();
+    
+  } catch (error: any) {
+    console.error('Error in background re-analyze:', error);
+    reanalyzeProgressStore.status = 'error';
+    reanalyzeProgressStore.message = error.message || 'Re-analyze failed';
+    sendReanalyzeProgress();
+  } finally {
+    reanalyzeProgressStore.isRunning = false;
+  }
+}
+
 function sendProgressUpdate(uploadId: number) {
   const progress = uploadProgressStore.get(uploadId);
   if (!progress) return;
@@ -424,66 +537,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Re-analyze all tenders with updated eligibility logic
+  // Re-analyze all tenders with updated eligibility logic (background processing)
   app.post('/api/tenders/reanalyze', isAuthenticated, async (req, res) => {
     try {
-      const criteria = await storage.getCompanyCriteria();
-      const negativeKeywords = await storage.getNegativeKeywords();
-      const allTenders = await storage.getTenders();
-      
-      let updated = 0;
-      let errors = 0;
-      
-      let skipped = 0;
-      for (const tender of allTenders) {
-        try {
-          // Skip tenders that have been manually overridden
-          if (tender.isManualOverride) {
-            skipped++;
-            continue;
-          }
-          
-          // Re-run eligibility analysis
-          const result = analyzeEligibility(
-            tender,
-            criteria,
-            negativeKeywords,
-            tender.isMsmeExempted || false,
-            tender.isStartupExempted || false,
-            tender.similarCategory || null
-          );
-          
-          // Update tender with new analysis results using existing updateTender method
-          await storage.updateTender(tender.id, {
-            matchPercentage: result.matchPercentage,
-            isMsmeExempted: result.isMsmeExempted,
-            isStartupExempted: result.isStartupExempted,
-            tags: result.tags,
-            analysisStatus: result.analysisStatus,
-            eligibilityStatus: result.eligibilityStatus,
-            notRelevantKeyword: result.notRelevantKeyword,
-            turnoverRequired: result.turnoverRequired,
-            turnoverMet: result.turnoverMet,
-          });
-          
-          updated++;
-        } catch (err) {
-          console.error(`Error re-analyzing tender ${tender.id}:`, err);
-          errors++;
-        }
+      // Check if already running
+      if (reanalyzeProgressStore.isRunning) {
+        return res.status(409).json({ 
+          message: "Re-analysis is already in progress",
+          status: reanalyzeProgressStore.status 
+        });
       }
       
+      reanalyzeProgressStore.isRunning = true;
+      reanalyzeProgressStore.status = 'running';
+      reanalyzeProgressStore.message = '';
+      
+      // Return immediately, process in background
       res.json({ 
         success: true, 
-        message: `Re-analyzed ${updated} tenders (${skipped} skipped, ${errors} errors)`,
-        updated,
-        skipped,
-        errors,
-        total: allTenders.length
+        message: "Re-analysis started in background" 
+      });
+      
+      // Start background processing
+      reanalyzeAllTendersAsync();
+      
+    } catch (error) {
+      console.error("Error starting re-analyze:", error);
+      res.status(500).json({ message: "Failed to start re-analyze" });
+    }
+  });
+  
+  // SSE endpoint for re-analyze progress
+  app.get('/api/reanalyze-progress', isAuthenticated, (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+    
+    reanalyzeProgressStore.clients.add(res);
+    
+    // Send current status immediately
+    sendReanalyzeProgress();
+    
+    req.on('close', () => {
+      reanalyzeProgressStore.clients.delete(res);
+    });
+  });
+  
+  // Get re-analyze status (non-SSE)
+  app.get('/api/reanalyze-status', isAuthenticated, (req, res) => {
+    res.json({
+      isRunning: reanalyzeProgressStore.isRunning,
+      status: reanalyzeProgressStore.status,
+      total: reanalyzeProgressStore.total,
+      processed: reanalyzeProgressStore.processed,
+      updated: reanalyzeProgressStore.updated,
+      skipped: reanalyzeProgressStore.skipped,
+      errors: reanalyzeProgressStore.errors,
+      message: reanalyzeProgressStore.message,
+    });
+  });
+  
+  // Missed tenders endpoints
+  app.get('/api/tenders/missed', isAuthenticated, async (req, res) => {
+    try {
+      // First update missed status based on deadlines
+      await storage.updateMissedDeadlines();
+      const tenders = await storage.getMissedTenders();
+      res.json(tenders);
+    } catch (error) {
+      console.error("Error fetching missed tenders:", error);
+      res.status(500).json({ message: "Failed to fetch missed tenders" });
+    }
+  });
+  
+  // Update missed deadlines manually
+  app.post('/api/tenders/update-missed', isAuthenticated, async (req, res) => {
+    try {
+      const result = await storage.updateMissedDeadlines();
+      res.json({ 
+        success: true, 
+        updated: result.updated,
+        restored: result.restored,
+        message: `Marked ${result.updated} as missed, restored ${result.restored}` 
       });
     } catch (error) {
-      console.error("Error re-analyzing tenders:", error);
-      res.status(500).json({ message: "Failed to re-analyze tenders" });
+      console.error("Error updating missed deadlines:", error);
+      res.status(500).json({ message: "Failed to update missed deadlines" });
     }
   });
 
@@ -1026,9 +1166,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/tenders/status/:status', isAuthenticated, async (req, res) => {
     try {
       const { status } = req.params;
-      if (!['eligible', 'not_eligible', 'not_relevant', 'manual_review'].includes(status)) {
+      if (!['eligible', 'not_eligible', 'not_relevant', 'manual_review', 'missed'].includes(status)) {
         return res.status(400).json({ message: "Invalid status" });
       }
+      
+      // For missed status, use the dedicated missed tenders method
+      if (status === 'missed') {
+        await storage.updateMissedDeadlines();
+        const tenders = await storage.getMissedTenders();
+        return res.json(tenders);
+      }
+      
       const tenders = await storage.getTendersByEligibilityStatus(status);
       res.json(tenders);
     } catch (error) {

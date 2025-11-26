@@ -75,8 +75,14 @@ export interface IStorage {
     notRelevant: number;
     notEligible: number; 
     manualReview: number;
+    missed: number;
+    corrigendum: number;
     todayUploads: number;
   }>;
+  
+  // Missed deadline operations
+  getMissedTenders(): Promise<Tender[]>;
+  updateMissedDeadlines(): Promise<{ updated: number; restored: number }>;
   
   // Data management
   deleteAllData(): Promise<void>;
@@ -168,15 +174,19 @@ export class DatabaseStorage implements IStorage {
 
   async getTendersByEligibilityStatus(status: string): Promise<Tender[]> {
     // Check for manual overrides first, then system status
+    // Exclude missed tenders from regular status queries
     return db
       .select()
       .from(tenders)
       .where(
-        or(
-          // Match override status if manually overridden
-          and(eq(tenders.isManualOverride, true), eq(tenders.overrideStatus, status)),
-          // Match eligibility status if not overridden
-          and(eq(tenders.isManualOverride, false), eq(tenders.eligibilityStatus, status))
+        and(
+          eq(tenders.isMissed, false),
+          or(
+            // Match override status if manually overridden
+            and(eq(tenders.isManualOverride, true), eq(tenders.overrideStatus, status)),
+            // Match eligibility status if not overridden
+            and(eq(tenders.isManualOverride, false), eq(tenders.eligibilityStatus, status))
+          )
         )
       )
       .orderBy(desc(tenders.matchPercentage), desc(tenders.createdAt));
@@ -293,50 +303,78 @@ export class DatabaseStorage implements IStorage {
     notRelevant: number;
     notEligible: number; 
     manualReview: number;
+    missed: number;
+    corrigendum: number;
     todayUploads: number;
   }> {
     const [totalResult] = await db
       .select({ count: sql<number>`count(*)` })
       .from(tenders);
     
-    // Count eligible tenders (considering manual overrides)
+    // Count eligible tenders (considering manual overrides, excluding missed)
     const [eligibleResult] = await db
       .select({ count: sql<number>`count(*)` })
       .from(tenders)
       .where(
-        or(
-          and(eq(tenders.isManualOverride, false), eq(tenders.eligibilityStatus, "eligible")),
-          and(eq(tenders.isManualOverride, true), eq(tenders.overrideStatus, "eligible"))
+        and(
+          eq(tenders.isMissed, false),
+          or(
+            and(eq(tenders.isManualOverride, false), eq(tenders.eligibilityStatus, "eligible")),
+            and(eq(tenders.isManualOverride, true), eq(tenders.overrideStatus, "eligible"))
+          )
         )
       );
     
-    // Count not relevant tenders
+    // Count not relevant tenders (excluding missed)
     const [notRelevantResult] = await db
       .select({ count: sql<number>`count(*)` })
       .from(tenders)
       .where(
-        or(
-          and(eq(tenders.isManualOverride, false), eq(tenders.eligibilityStatus, "not_relevant")),
-          and(eq(tenders.isManualOverride, true), eq(tenders.overrideStatus, "not_relevant"))
+        and(
+          eq(tenders.isMissed, false),
+          or(
+            and(eq(tenders.isManualOverride, false), eq(tenders.eligibilityStatus, "not_relevant")),
+            and(eq(tenders.isManualOverride, true), eq(tenders.overrideStatus, "not_relevant"))
+          )
         )
       );
     
-    // Count not eligible tenders
+    // Count not eligible tenders (excluding missed)
     const [notEligibleResult] = await db
       .select({ count: sql<number>`count(*)` })
       .from(tenders)
       .where(
-        or(
-          and(eq(tenders.isManualOverride, false), eq(tenders.eligibilityStatus, "not_eligible")),
-          and(eq(tenders.isManualOverride, true), eq(tenders.overrideStatus, "not_eligible"))
+        and(
+          eq(tenders.isMissed, false),
+          or(
+            and(eq(tenders.isManualOverride, false), eq(tenders.eligibilityStatus, "not_eligible")),
+            and(eq(tenders.isManualOverride, true), eq(tenders.overrideStatus, "not_eligible"))
+          )
         )
       );
     
-    // Count manual review tenders
+    // Count manual review tenders (excluding missed)
     const [manualReviewResult] = await db
       .select({ count: sql<number>`count(*)` })
       .from(tenders)
-      .where(eq(tenders.eligibilityStatus, "manual_review"));
+      .where(
+        and(
+          eq(tenders.isMissed, false),
+          eq(tenders.eligibilityStatus, "manual_review")
+        )
+      );
+    
+    // Count missed tenders
+    const [missedResult] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(tenders)
+      .where(eq(tenders.isMissed, true));
+    
+    // Count corrigendum tenders
+    const [corrigendumResult] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(tenders)
+      .where(eq(tenders.isCorrigendum, true));
     
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -352,8 +390,80 @@ export class DatabaseStorage implements IStorage {
       notRelevant: Number(notRelevantResult?.count || 0),
       notEligible: Number(notEligibleResult?.count || 0),
       manualReview: Number(manualReviewResult?.count || 0),
+      missed: Number(missedResult?.count || 0),
+      corrigendum: Number(corrigendumResult?.count || 0),
       todayUploads: Number(todayResult?.count || 0),
     };
+  }
+
+  // Missed deadline operations
+  async getMissedTenders(): Promise<Tender[]> {
+    return db
+      .select()
+      .from(tenders)
+      .where(eq(tenders.isMissed, true))
+      .orderBy(desc(tenders.submissionDeadline));
+  }
+
+  async updateMissedDeadlines(): Promise<{ updated: number; restored: number }> {
+    const now = new Date();
+    now.setHours(0, 0, 0, 0); // Start of today
+    
+    let updated = 0;
+    let restored = 0;
+    
+    // Find all tenders where deadline has passed but not marked as missed
+    const passedDeadline = await db
+      .select()
+      .from(tenders)
+      .where(
+        and(
+          eq(tenders.isMissed, false),
+          sql`${tenders.submissionDeadline} IS NOT NULL`,
+          sql`${tenders.submissionDeadline} < ${now}`
+        )
+      );
+    
+    for (const tender of passedDeadline) {
+      // Get effective status (override or eligibility)
+      const currentStatus = tender.isManualOverride ? tender.overrideStatus : tender.eligibilityStatus;
+      
+      await db
+        .update(tenders)
+        .set({
+          isMissed: true,
+          previousEligibilityStatus: currentStatus,
+          missedAt: new Date(),
+        })
+        .where(eq(tenders.id, tender.id));
+      updated++;
+    }
+    
+    // Find tenders marked as missed but with a future deadline (deadline was updated)
+    const futureDeadline = await db
+      .select()
+      .from(tenders)
+      .where(
+        and(
+          eq(tenders.isMissed, true),
+          sql`${tenders.submissionDeadline} IS NOT NULL`,
+          sql`${tenders.submissionDeadline} >= ${now}`
+        )
+      );
+    
+    for (const tender of futureDeadline) {
+      await db
+        .update(tenders)
+        .set({
+          isMissed: false,
+          missedAt: null,
+          // Keep previousEligibilityStatus for reference
+        })
+        .where(eq(tenders.id, tender.id));
+      restored++;
+    }
+    
+    return { updated, restored };
   }
 
   // Data management
