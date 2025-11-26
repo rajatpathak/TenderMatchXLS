@@ -339,6 +339,29 @@ function isNegativeKeywordPrimaryFocus(title: string, negativeKeyword: string): 
   return false;
 }
 
+// Check if tender title is a CORE IT SERVICE that company handles
+// These should always be considered eligible regardless of turnover
+function isCoreITServiceTitle(title: string): boolean {
+  if (!title) return false;
+  const lowerTitle = title.toLowerCase();
+  
+  const coreServiceTitles = [
+    'hiring of agency for it projects',
+    'hiring of agency for it projects- milestone basis',
+    'custom bid for services',
+    'software development',
+    'website development',
+    'web portal development',
+    'mobile app development',
+    'application development',
+    'it/ites services',
+    'manpower supply for it',
+    'it manpower deployment',
+  ];
+  
+  return coreServiceTitles.some(term => lowerTitle.includes(term));
+}
+
 export function analyzeEligibility(
   tender: Partial<InsertTender>,
   criteria: CompanyCriteria,
@@ -347,24 +370,48 @@ export function analyzeEligibility(
   excelStartupExemption: boolean = false,
   similarCategory: string | null = null
 ): MatchResult {
-  const eligibilityText = [
-    tender.eligibilityCriteria || '',
-    tender.checklist || '',
-    tender.title || '',
-  ].join(' ');
+  const titleText = tender.title || '';
+  const criteriaText = tender.eligibilityCriteria || '';
+  const checklistText = tender.checklist || '';
   
-  if (!eligibilityText.trim()) {
-    return {
-      matchPercentage: 0,
-      isMsmeExempted: excelMsmeExemption,
-      isStartupExempted: excelStartupExemption,
-      tags: [],
-      analysisStatus: "unable_to_analyze",
-      eligibilityStatus: "manual_review",
-      notRelevantKeyword: null,
-      turnoverRequired: null,
-      turnoverMet: false,
-    };
+  const eligibilityText = [criteriaText, checklistText, titleText].join(' ');
+  
+  // Check if this is a CORE IT SERVICE tender (like "hiring of agency for it projects")
+  const isCoreService = isCoreITServiceTitle(titleText);
+  
+  // If NO eligibility criteria AND NO checklist, but title exists:
+  // - If it's a core IT service, mark as ELIGIBLE
+  // - Otherwise, mark as MANUAL_REVIEW (we can't determine eligibility without criteria)
+  if (!criteriaText.trim() && !checklistText.trim()) {
+    if (isCoreService) {
+      // Core IT service with no criteria = ELIGIBLE (these are our tenders)
+      return {
+        matchPercentage: 100,
+        isMsmeExempted: excelMsmeExemption,
+        isStartupExempted: excelStartupExemption,
+        tags: detectTags(eligibilityText, criteria),
+        analysisStatus: "analyzed",
+        eligibilityStatus: "eligible",
+        notRelevantKeyword: null,
+        turnoverRequired: null,
+        turnoverMet: true,
+      };
+    } else if (!titleText.trim()) {
+      // No criteria, no checklist, no title = can't analyze
+      return {
+        matchPercentage: 0,
+        isMsmeExempted: excelMsmeExemption,
+        isStartupExempted: excelStartupExemption,
+        tags: [],
+        analysisStatus: "unable_to_analyze",
+        eligibilityStatus: "manual_review",
+        notRelevantKeyword: null,
+        turnoverRequired: null,
+        turnoverMet: false,
+      };
+    }
+    // Has title but not core service and no criteria = manual review
+    // (We need to see the PDF/criteria to determine eligibility)
   }
   
   // Use Excel exemption if provided, otherwise check from text
@@ -377,7 +424,6 @@ export function analyzeEligibility(
   // Check if tender matches core IT/Software services (from title or Similar Category)
   const isCoreServiceMatch = checkCoreServiceMatch(similarCategory);
   const textLower = eligibilityText.toLowerCase();
-  const titleText = tender.title || '';
   
   // Check for negative keywords - get ALL matches, not just the first one
   const allMatchedKeywords = checkAllNegativeKeywords(eligibilityText, negativeKeywords);
@@ -527,8 +573,15 @@ export function analyzeEligibility(
   let analysisStatus: "analyzed" | "unable_to_analyze" | "not_eligible" = "analyzed";
   let eligibilityStatus: EligibilityStatus = "eligible";
   
-  // If turnover requirement exists and company doesn't meet it (and no exemption), mark as NOT ELIGIBLE
-  if (!turnoverMet && requiredTurnoverLakhs !== null) {
+  // CORE IT SERVICE TENDERS (like "hiring of agency for it projects"):
+  // These are ALWAYS ELIGIBLE regardless of turnover - these are our primary services
+  if (isCoreService) {
+    // Core IT service = always eligible (may show turnover gap in UI but still eligible)
+    analysisStatus = "analyzed";
+    eligibilityStatus = "eligible";
+    matchPercentage = Math.max(matchPercentage, 80); // At least 80% for core services
+  } else if (!turnoverMet && requiredTurnoverLakhs !== null) {
+    // Non-core service with unmet turnover = NOT ELIGIBLE
     analysisStatus = "not_eligible";
     eligibilityStatus = "not_eligible";
     matchPercentage = Math.min(matchPercentage, 40); // Cap at 40% for not eligible
