@@ -95,10 +95,12 @@ function checkStartupExemptionFromExcel(value: any): boolean {
   return ['yes', 'y', 'true', '1', 'exempted', 'applicable'].includes(str);
 }
 
-interface TenderWithExcelFlags extends Partial<InsertTender> {
+type TenderWithExcelFlags = Partial<InsertTender> & {
+  t247Id: string;
+  tenderType: 'gem' | 'non_gem';
   excelMsmeExemption: boolean;
   excelStartupExemption: boolean;
-}
+};
 
 function getColumnByLetter(sheet: XLSX.WorkSheet, rowIdx: number, colLetter: string): any {
   const cellAddress = `${colLetter}${rowIdx}`;
@@ -455,7 +457,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "No file uploaded" });
       }
 
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
       
       // Count total rows across all sheets
@@ -507,7 +509,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "No file uploaded" });
       }
 
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
       
       // Create upload record
@@ -780,7 +782,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put('/api/company-criteria', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const { turnoverCr, projectTypes } = req.body;
 
       const criteria = await storage.upsertCompanyCriteria({
