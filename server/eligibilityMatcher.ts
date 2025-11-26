@@ -242,22 +242,6 @@ export function analyzeEligibility(
     tender.title || '',
   ].join(' ');
   
-  // Check for negative keywords first (mark as not relevant)
-  const matchedNegativeKeyword = checkNegativeKeywords(eligibilityText, negativeKeywords);
-  if (matchedNegativeKeyword) {
-    return {
-      matchPercentage: 0,
-      isMsmeExempted: false,
-      isStartupExempted: false,
-      tags: [],
-      analysisStatus: "analyzed",
-      eligibilityStatus: "not_relevant",
-      notRelevantKeyword: matchedNegativeKeyword,
-      turnoverRequired: null,
-      turnoverMet: false,
-    };
-  }
-  
   if (!eligibilityText.trim()) {
     return {
       matchPercentage: 0,
@@ -273,12 +257,42 @@ export function analyzeEligibility(
   }
   
   // Use Excel exemption if provided, otherwise check from text
-  // Excel column values take precedence since they are explicit
   const isMsmeExempted = excelMsmeExemption || checkMsmeExemption(eligibilityText);
   const isStartupExempted = excelStartupExemption || checkStartupExemption(eligibilityText);
   
   // Detect tags based on project type keywords
   const tags = detectTags(eligibilityText, criteria);
+  
+  // Check if tender matches core IT/Software services (from title or Similar Category)
+  const isCoreServiceMatch = checkCoreServiceMatch(similarCategory);
+  const textLower = eligibilityText.toLowerCase();
+  const hasCoreITKeywords = [
+    'software', 'website', 'web portal', 'web application', 'web development',
+    'mobile app', 'app development', 'application development', 'it project',
+    'it/ites', 'ites', 'it services', 'digitization', 'digital', 'portal',
+    'manpower', 'erp', 'crm', 'data processing', 'solution design',
+    'computerization', 'automation', 'information technology', 'ict'
+  ].some(kw => textLower.includes(kw));
+  
+  const matchesCoreProjectTypes = tags.length > 0 || isCoreServiceMatch || hasCoreITKeywords;
+  
+  // SMART NEGATIVE KEYWORD CHECK:
+  // Only apply negative keywords if the tender does NOT match our core services
+  // If tender is clearly about software/IT services, ignore negative keywords
+  const matchedNegativeKeyword = checkNegativeKeywords(eligibilityText, negativeKeywords);
+  if (matchedNegativeKeyword && !matchesCoreProjectTypes) {
+    return {
+      matchPercentage: 0,
+      isMsmeExempted: false,
+      isStartupExempted: false,
+      tags: [],
+      analysisStatus: "analyzed",
+      eligibilityStatus: "not_relevant",
+      notRelevantKeyword: matchedNegativeKeyword,
+      turnoverRequired: null,
+      turnoverMet: false,
+    };
+  }
   
   // Extract turnover requirement in LAKHS
   // Excel value (from Column S) is already in Lakhs, text parsing also returns Lakhs
@@ -321,24 +335,14 @@ export function analyzeEligibility(
   totalCriteria += 30;
   if (tags.length > 0) {
     matchScore += 30; // Full score if at least one tag matches
-  } else {
-    // Check if the tender seems to be in a related domain
-    const textLower = eligibilityText.toLowerCase();
-    const hasITKeywords = [
-      'software', 'it', 'technology', 'digital', 'computer', 'web', 'mobile', 
-      'application', 'development', 'system', 'portal', 'manpower', 'staff',
-      'ites', 'it/ites', 'it services'
-    ].some(kw => textLower.includes(kw));
-    
-    if (hasITKeywords) {
-      matchScore += 15; // Partial score for related but not exact match
-    }
+  } else if (hasCoreITKeywords) {
+    matchScore += 15; // Partial score for related but not exact match
   }
   
   // 3. Check for negative criteria - construction, civil works etc (20% weight)
   totalCriteria += 20;
   const hardcodedNegativeWords = ['civil', 'construction', 'building', 'road', 'bridge', 'infrastructure', 'medical', 'pharmaceutical', 'electrical', 'mechanical'];
-  const hasNegative = hardcodedNegativeWords.some(kw => eligibilityText.toLowerCase().includes(kw));
+  const hasNegative = hardcodedNegativeWords.some(kw => textLower.includes(kw));
   
   if (!hasNegative) {
     matchScore += 20;
@@ -347,13 +351,13 @@ export function analyzeEligibility(
   // Calculate final percentage
   let matchPercentage = Math.round((matchScore / totalCriteria) * 100);
   
-  // Check if Similar Category (Column X) matches core services
-  const isCoreServiceMatch = checkCoreServiceMatch(similarCategory);
-  
   // 100% MATCH CONDITIONS:
   // 1. Similar Category matches core services AND turnover is met (directly or via exemption)
-  // 2. OR MSME/Startup exempted AND all other criteria met
+  // 2. OR Core project types match with turnover met
+  // 3. OR MSME/Startup exempted AND all other criteria met
   if (isCoreServiceMatch && turnoverMet && !hasNegative) {
+    matchPercentage = 100;
+  } else if (matchesCoreProjectTypes && turnoverMet && !hasNegative) {
     matchPercentage = 100;
   } else if ((isMsmeExempted || isStartupExempted) && tags.length > 0 && !hasNegative) {
     matchPercentage = 100;
