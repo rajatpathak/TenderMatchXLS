@@ -17,15 +17,18 @@ import {
   LayoutDashboard, 
   Upload, 
   FileStack, 
-  AlertCircle, 
   Settings,
   FileSpreadsheet,
   LogOut,
-  History
+  History,
+  CheckCircle,
+  XCircle,
+  Ban,
+  FileSearch,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 
-const menuItems = [
+const mainMenuItems = [
   {
     title: "Dashboard",
     url: "/",
@@ -41,16 +44,37 @@ const menuItems = [
     url: "/history",
     icon: History,
   },
+];
+
+const tenderCategories = [
+  {
+    title: "Eligible",
+    url: "/tenders/eligible",
+    icon: CheckCircle,
+  },
+  {
+    title: "Not Relevant",
+    url: "/tenders/not-relevant",
+    icon: Ban,
+  },
+  {
+    title: "Not Eligible",
+    url: "/tenders/not-eligible",
+    icon: XCircle,
+  },
+  {
+    title: "Manual Review",
+    url: "/tenders/manual-review",
+    icon: FileSearch,
+  },
   {
     title: "Corrigendum",
     url: "/corrigendum",
     icon: FileStack,
   },
-  {
-    title: "Unable to Analyse",
-    url: "/unable-to-analyse",
-    icon: AlertCircle,
-  },
+];
+
+const settingsItems = [
   {
     title: "Settings",
     url: "/settings",
@@ -85,10 +109,60 @@ export function AppSidebar() {
       
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Navigation</SidebarGroupLabel>
+          <SidebarGroupLabel>Main</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {menuItems.map((item) => {
+              {mainMenuItems.map((item) => {
+                const isActive = location === item.url;
+                return (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton 
+                      asChild
+                      isActive={isActive}
+                      data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
+                    >
+                      <Link href={item.url}>
+                        <item.icon className="w-4 h-4" />
+                        <span>{item.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Tender Categories</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {tenderCategories.map((item) => {
+                const isActive = location === item.url;
+                return (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton 
+                      asChild
+                      isActive={isActive}
+                      data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
+                    >
+                      <Link href={item.url}>
+                        <item.icon className="w-4 h-4" />
+                        <span>{item.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Configuration</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {settingsItems.map((item) => {
                 const isActive = location === item.url;
                 return (
                   <SidebarMenuItem key={item.title}>

@@ -16,6 +16,12 @@ import UnableToAnalyse from "@/pages/UnableToAnalyse";
 import Corrigendum from "@/pages/Corrigendum";
 import UploadHistory from "@/pages/UploadHistory";
 import UploadPage from "@/pages/UploadPage";
+import { 
+  EligibleTendersPage, 
+  NotRelevantTendersPage, 
+  NotEligibleTendersPage, 
+  ManualReviewTendersPage 
+} from "@/pages/TenderCategoryPage";
 
 function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
   const style = {
@@ -67,6 +73,10 @@ function Router() {
         <Route path="/" component={Dashboard} />
         <Route path="/upload" component={UploadPage} />
         <Route path="/history" component={UploadHistory} />
+        <Route path="/tenders/eligible" component={EligibleTendersPage} />
+        <Route path="/tenders/not-relevant" component={NotRelevantTendersPage} />
+        <Route path="/tenders/not-eligible" component={NotEligibleTendersPage} />
+        <Route path="/tenders/manual-review" component={ManualReviewTendersPage} />
         <Route path="/corrigendum" component={Corrigendum} />
         <Route path="/unable-to-analyse" component={UnableToAnalyse} />
         <Route path="/settings" component={Settings} />

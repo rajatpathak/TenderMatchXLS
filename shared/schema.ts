@@ -55,6 +55,38 @@ export const insertCompanyCriteriaSchema = createInsertSchema(companyCriteria).o
 export type InsertCompanyCriteria = z.infer<typeof insertCompanyCriteriaSchema>;
 export type CompanyCriteria = typeof companyCriteria.$inferSelect;
 
+// Negative keywords for filtering irrelevant tenders
+export const negativeKeywords = pgTable("negative_keywords", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  keyword: varchar("keyword").notNull().unique(),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: varchar("created_by").references(() => users.id),
+});
+
+export const insertNegativeKeywordSchema = createInsertSchema(negativeKeywords).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertNegativeKeyword = z.infer<typeof insertNegativeKeywordSchema>;
+export type NegativeKeyword = typeof negativeKeywords.$inferSelect;
+
+// Predefined override reasons for manual status changes
+export const overrideReasons = [
+  "Turnover requirement too high",
+  "Experience requirement not met",
+  "Technical capability mismatch",
+  "Location/Region restriction",
+  "Product/Service not in scope",
+  "Already applied",
+  "Deadline passed",
+  "Budget constraint",
+  "Resource unavailable",
+  "Other (specify in comment)",
+] as const;
+
+export type OverrideReason = typeof overrideReasons[number];
+
 // Excel uploads tracking
 export const excelUploads = pgTable("excel_uploads", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -105,6 +137,18 @@ export const tenders = pgTable("tenders", {
   isStartupExempted: boolean("is_startup_exempted").default(false),
   tags: text("tags").array().default(sql`ARRAY[]::text[]`),
   analysisStatus: varchar("analysis_status").default("analyzed"), // 'analyzed', 'unable_to_analyze'
+  
+  // Eligibility status: 'eligible', 'not_eligible', 'not_relevant', 'manual_review'
+  eligibilityStatus: varchar("eligibility_status").default("eligible"),
+  notRelevantKeyword: varchar("not_relevant_keyword"), // The keyword that matched if marked not relevant
+  
+  // Manual override fields
+  isManualOverride: boolean("is_manual_override").default(false),
+  overrideStatus: varchar("override_status"), // 'not_eligible', 'not_relevant'
+  overrideReason: varchar("override_reason"),
+  overrideComment: text("override_comment"),
+  overrideBy: varchar("override_by").references(() => users.id),
+  overrideAt: timestamp("override_at"),
   
   // Additional data stored as JSON
   rawData: jsonb("raw_data"),

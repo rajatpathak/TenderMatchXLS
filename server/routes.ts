@@ -225,6 +225,9 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
         updatedBy: userId,
       });
     }
+    
+    // Get negative keywords for filtering
+    const negativeKeywords = await storage.getNegativeKeywords();
 
     let gemCount = 0;
     let nonGemCount = 0;
@@ -259,8 +262,8 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
           const excelMsme = tenderData.excelMsmeExemption;
           const excelStartup = tenderData.excelStartupExemption;
           
-          // Analyze eligibility
-          const matchResult = analyzeEligibility(tenderData, criteria!, excelMsme, excelStartup);
+          // Analyze eligibility with negative keywords
+          const matchResult = analyzeEligibility(tenderData, criteria!, negativeKeywords, excelMsme, excelStartup);
           
           // Remove temporary Excel fields before inserting
           const { excelMsmeExemption, excelStartupExemption, ...tenderInsertData } = tenderData;
@@ -273,6 +276,8 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
             isStartupExempted: matchResult.isStartupExempted,
             tags: matchResult.tags,
             analysisStatus: matchResult.analysisStatus,
+            eligibilityStatus: matchResult.eligibilityStatus,
+            notRelevantKeyword: matchResult.notRelevantKeyword,
             isCorrigendum: !!existingTender,
             originalTenderId: existingTender?.id || null,
           };
@@ -524,6 +529,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           updatedBy: userId,
         });
       }
+      
+      // Get negative keywords for filtering
+      const negativeKeywords = await storage.getNegativeKeywords();
 
       let gemCount = 0;
       let nonGemCount = 0;
@@ -559,8 +567,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const excelMsme = tenderData.excelMsmeExemption;
           const excelStartup = tenderData.excelStartupExemption;
           
-          // Analyze eligibility with Excel exemption flags
-          const matchResult = analyzeEligibility(tenderData, criteria!, excelMsme, excelStartup);
+          // Analyze eligibility with Excel exemption flags and negative keywords
+          const matchResult = analyzeEligibility(tenderData, criteria!, negativeKeywords, excelMsme, excelStartup);
           
           // Remove temporary Excel fields before inserting
           const { excelMsmeExemption, excelStartupExemption, ...tenderInsertData } = tenderData;
@@ -573,6 +581,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             isStartupExempted: matchResult.isStartupExempted,
             tags: matchResult.tags,
             analysisStatus: matchResult.analysisStatus,
+            eligibilityStatus: matchResult.eligibilityStatus,
+            notRelevantKeyword: matchResult.notRelevantKeyword,
             isCorrigendum: !!existingTender,
             originalTenderId: existingTender?.id || null,
           };
@@ -614,7 +624,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const tenderData = parseTenderFromRow(row, 'non_gem', sheet, excelRowIndex);
           
           const existingTender = await storage.getTenderByT247Id(tenderData.t247Id!);
-          const matchResult = analyzeEligibility(tenderData, criteria!);
+          const matchResult = analyzeEligibility(tenderData, criteria!, negativeKeywords);
           
           const fullTenderData: InsertTender = {
             ...tenderData,
@@ -624,6 +634,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             isStartupExempted: matchResult.isStartupExempted,
             tags: matchResult.tags,
             analysisStatus: matchResult.analysisStatus,
+            eligibilityStatus: matchResult.eligibilityStatus,
+            notRelevantKeyword: matchResult.notRelevantKeyword,
             isCorrigendum: !!existingTender,
             originalTenderId: existingTender?.id || null,
           };
@@ -778,14 +790,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       // Re-analyze all tenders with new criteria
+      const negativeKeywords = await storage.getNegativeKeywords();
       const tenders = await storage.getTenders();
       for (const tender of tenders) {
-        const matchResult = analyzeEligibility(tender, criteria);
+        // Skip if manually overridden
+        if (tender.isManualOverride) continue;
+        
+        const matchResult = analyzeEligibility(tender, criteria, negativeKeywords);
         await storage.updateTender(tender.id, {
           matchPercentage: matchResult.matchPercentage,
           isMsmeExempted: matchResult.isMsmeExempted,
           isStartupExempted: matchResult.isStartupExempted,
           tags: matchResult.tags,
+          eligibilityStatus: matchResult.eligibilityStatus,
+          notRelevantKeyword: matchResult.notRelevantKeyword,
         });
       }
 
@@ -793,6 +811,172 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error updating criteria:", error);
       res.status(500).json({ message: "Failed to update criteria" });
+    }
+  });
+
+  // Negative keywords endpoints
+  app.get('/api/negative-keywords', isAuthenticated, async (req, res) => {
+    try {
+      const keywords = await storage.getNegativeKeywords();
+      res.json(keywords);
+    } catch (error) {
+      console.error("Error fetching negative keywords:", error);
+      res.status(500).json({ message: "Failed to fetch negative keywords" });
+    }
+  });
+
+  app.post('/api/negative-keywords', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const { keyword, description } = req.body;
+
+      if (!keyword || !keyword.trim()) {
+        return res.status(400).json({ message: "Keyword is required" });
+      }
+
+      const created = await storage.createNegativeKeyword({
+        keyword: keyword.trim(),
+        description: description || null,
+        createdBy: userId || null,
+      });
+
+      // Re-analyze all tenders to mark matching ones as not relevant
+      const criteria = await storage.getCompanyCriteria();
+      const negativeKeywords = await storage.getNegativeKeywords();
+      const tenders = await storage.getTenders();
+      
+      for (const tender of tenders) {
+        // Skip if manually overridden
+        if (tender.isManualOverride) continue;
+        
+        const matchResult = analyzeEligibility(tender, criteria!, negativeKeywords);
+        if (matchResult.eligibilityStatus !== tender.eligibilityStatus) {
+          await storage.updateTender(tender.id, {
+            eligibilityStatus: matchResult.eligibilityStatus,
+            notRelevantKeyword: matchResult.notRelevantKeyword,
+            matchPercentage: matchResult.matchPercentage,
+          });
+        }
+      }
+
+      res.json(created);
+    } catch (error: any) {
+      console.error("Error creating negative keyword:", error);
+      if (error.code === '23505') { // Unique violation
+        return res.status(400).json({ message: "This keyword already exists" });
+      }
+      res.status(500).json({ message: "Failed to create negative keyword" });
+    }
+  });
+
+  app.delete('/api/negative-keywords/:id', isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteNegativeKeyword(id);
+      
+      // Re-analyze tenders that were marked as not relevant due to this keyword
+      const criteria = await storage.getCompanyCriteria();
+      const negativeKeywords = await storage.getNegativeKeywords();
+      const tenders = await storage.getTenders();
+      
+      for (const tender of tenders) {
+        if (tender.isManualOverride) continue;
+        
+        const matchResult = analyzeEligibility(tender, criteria!, negativeKeywords);
+        await storage.updateTender(tender.id, {
+          eligibilityStatus: matchResult.eligibilityStatus,
+          notRelevantKeyword: matchResult.notRelevantKeyword,
+          matchPercentage: matchResult.matchPercentage,
+        });
+      }
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting negative keyword:", error);
+      res.status(500).json({ message: "Failed to delete negative keyword" });
+    }
+  });
+
+  // Get tenders by eligibility status
+  app.get('/api/tenders/status/:status', isAuthenticated, async (req, res) => {
+    try {
+      const { status } = req.params;
+      if (!['eligible', 'not_eligible', 'not_relevant', 'manual_review'].includes(status)) {
+        return res.status(400).json({ message: "Invalid status" });
+      }
+      const tenders = await storage.getTendersByEligibilityStatus(status);
+      res.json(tenders);
+    } catch (error) {
+      console.error("Error fetching tenders by status:", error);
+      res.status(500).json({ message: "Failed to fetch tenders" });
+    }
+  });
+
+  // Manual override endpoint
+  app.post('/api/tenders/:id/override', isAuthenticated, async (req: any, res) => {
+    try {
+      const tenderId = parseInt(req.params.id);
+      const userId = req.user?.claims?.sub;
+      const { overrideStatus, overrideReason, overrideComment } = req.body;
+
+      if (!overrideStatus || !['not_eligible', 'not_relevant'].includes(overrideStatus)) {
+        return res.status(400).json({ message: "Invalid override status. Must be 'not_eligible' or 'not_relevant'" });
+      }
+
+      if (!overrideReason) {
+        return res.status(400).json({ message: "Override reason is required" });
+      }
+
+      const tender = await storage.updateTenderOverride(tenderId, {
+        overrideStatus,
+        overrideReason,
+        overrideComment: overrideComment || null,
+        overrideBy: userId || null,
+      });
+
+      if (!tender) {
+        return res.status(404).json({ message: "Tender not found" });
+      }
+
+      res.json(tender);
+    } catch (error) {
+      console.error("Error overriding tender:", error);
+      res.status(500).json({ message: "Failed to override tender" });
+    }
+  });
+
+  // Undo manual override
+  app.delete('/api/tenders/:id/override', isAuthenticated, async (req, res) => {
+    try {
+      const tenderId = parseInt(req.params.id);
+      
+      // Reset override and re-analyze
+      const criteria = await storage.getCompanyCriteria();
+      const negativeKeywords = await storage.getNegativeKeywords();
+      const tender = await storage.getTenderById(tenderId);
+      
+      if (!tender) {
+        return res.status(404).json({ message: "Tender not found" });
+      }
+
+      const matchResult = analyzeEligibility(tender, criteria!, negativeKeywords);
+      
+      const updated = await storage.updateTender(tenderId, {
+        isManualOverride: false,
+        overrideStatus: null,
+        overrideReason: null,
+        overrideComment: null,
+        overrideBy: null,
+        overrideAt: null,
+        eligibilityStatus: matchResult.eligibilityStatus,
+        notRelevantKeyword: matchResult.notRelevantKeyword,
+        matchPercentage: matchResult.matchPercentage,
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error removing override:", error);
+      res.status(500).json({ message: "Failed to remove override" });
     }
   });
 

@@ -5,6 +5,7 @@ import {
   companyCriteria,
   corrigendumChanges,
   tenderDocuments,
+  negativeKeywords,
   type User,
   type UpsertUser,
   type Tender,
@@ -17,9 +18,11 @@ import {
   type InsertCorrigendumChange,
   type TenderDocument,
   type InsertTenderDocument,
+  type NegativeKeyword,
+  type InsertNegativeKeyword,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and, or, sql } from "drizzle-orm";
 
 export interface IStorage {
   // User operations
@@ -31,9 +34,16 @@ export interface IStorage {
   getTenderById(id: number): Promise<Tender | undefined>;
   getTenderByT247Id(t247Id: string): Promise<Tender | undefined>;
   getTendersByStatus(status: string): Promise<Tender[]>;
+  getTendersByEligibilityStatus(status: string): Promise<Tender[]>;
   getCorrigendumTenders(): Promise<(Tender & { changes: CorrigendumChange[] })[]>;
   createTender(tender: InsertTender): Promise<Tender>;
   updateTender(id: number, tender: Partial<InsertTender>): Promise<Tender | undefined>;
+  updateTenderOverride(id: number, overrideData: {
+    overrideStatus: string;
+    overrideReason: string;
+    overrideComment?: string;
+    overrideBy?: string;
+  }): Promise<Tender | undefined>;
   
   // Excel upload operations
   getExcelUploads(): Promise<ExcelUpload[]>;
@@ -43,6 +53,11 @@ export interface IStorage {
   // Company criteria operations
   getCompanyCriteria(): Promise<CompanyCriteria | undefined>;
   upsertCompanyCriteria(criteria: InsertCompanyCriteria): Promise<CompanyCriteria>;
+  
+  // Negative keywords operations
+  getNegativeKeywords(): Promise<NegativeKeyword[]>;
+  createNegativeKeyword(keyword: InsertNegativeKeyword): Promise<NegativeKeyword>;
+  deleteNegativeKeyword(id: number): Promise<void>;
   
   // Corrigendum operations
   createCorrigendumChange(change: InsertCorrigendumChange): Promise<CorrigendumChange>;
@@ -54,7 +69,14 @@ export interface IStorage {
   updateTenderDocument(id: number, doc: Partial<InsertTenderDocument>): Promise<TenderDocument | undefined>;
   
   // Stats
-  getStats(): Promise<{ total: number; fullMatch: number; pendingAnalysis: number; notEligible: number; todayUploads: number }>;
+  getStats(): Promise<{ 
+    total: number; 
+    eligible: number;
+    notRelevant: number;
+    notEligible: number; 
+    manualReview: number;
+    todayUploads: number;
+  }>;
   
   // Data management
   deleteAllData(): Promise<void>;
@@ -144,6 +166,43 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
+  async getTendersByEligibilityStatus(status: string): Promise<Tender[]> {
+    // Check for manual overrides first, then system status
+    return db
+      .select()
+      .from(tenders)
+      .where(
+        or(
+          // Match override status if manually overridden
+          and(eq(tenders.isManualOverride, true), eq(tenders.overrideStatus, status)),
+          // Match eligibility status if not overridden
+          and(eq(tenders.isManualOverride, false), eq(tenders.eligibilityStatus, status))
+        )
+      )
+      .orderBy(desc(tenders.matchPercentage), desc(tenders.createdAt));
+  }
+
+  async updateTenderOverride(id: number, overrideData: {
+    overrideStatus: string;
+    overrideReason: string;
+    overrideComment?: string;
+    overrideBy?: string;
+  }): Promise<Tender | undefined> {
+    const [updated] = await db
+      .update(tenders)
+      .set({
+        isManualOverride: true,
+        overrideStatus: overrideData.overrideStatus,
+        overrideReason: overrideData.overrideReason,
+        overrideComment: overrideData.overrideComment || null,
+        overrideBy: overrideData.overrideBy || null,
+        overrideAt: new Date(),
+      })
+      .where(eq(tenders.id, id))
+      .returning();
+    return updated;
+  }
+
   // Excel upload operations
   async getExcelUploads(): Promise<ExcelUpload[]> {
     return db.select().from(excelUploads).orderBy(desc(excelUploads.uploadedAt));
@@ -184,6 +243,20 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
+  // Negative keywords operations
+  async getNegativeKeywords(): Promise<NegativeKeyword[]> {
+    return db.select().from(negativeKeywords).orderBy(desc(negativeKeywords.createdAt));
+  }
+
+  async createNegativeKeyword(keyword: InsertNegativeKeyword): Promise<NegativeKeyword> {
+    const [created] = await db.insert(negativeKeywords).values(keyword).returning();
+    return created;
+  }
+
+  async deleteNegativeKeyword(id: number): Promise<void> {
+    await db.delete(negativeKeywords).where(eq(negativeKeywords.id, id));
+  }
+
   // Corrigendum operations
   async createCorrigendumChange(change: InsertCorrigendumChange): Promise<CorrigendumChange> {
     const [created] = await db.insert(corrigendumChanges).values(change).returning();
@@ -214,25 +287,56 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Stats
-  async getStats(): Promise<{ total: number; fullMatch: number; pendingAnalysis: number; notEligible: number; todayUploads: number }> {
+  async getStats(): Promise<{ 
+    total: number; 
+    eligible: number;
+    notRelevant: number;
+    notEligible: number; 
+    manualReview: number;
+    todayUploads: number;
+  }> {
     const [totalResult] = await db
       .select({ count: sql<number>`count(*)` })
       .from(tenders);
     
-    const [fullMatchResult] = await db
+    // Count eligible tenders (considering manual overrides)
+    const [eligibleResult] = await db
       .select({ count: sql<number>`count(*)` })
       .from(tenders)
-      .where(eq(tenders.matchPercentage, 100));
+      .where(
+        or(
+          and(eq(tenders.isManualOverride, false), eq(tenders.eligibilityStatus, "eligible")),
+          and(eq(tenders.isManualOverride, true), eq(tenders.overrideStatus, "eligible"))
+        )
+      );
     
-    const [pendingResult] = await db
+    // Count not relevant tenders
+    const [notRelevantResult] = await db
       .select({ count: sql<number>`count(*)` })
       .from(tenders)
-      .where(eq(tenders.analysisStatus, "unable_to_analyze"));
+      .where(
+        or(
+          and(eq(tenders.isManualOverride, false), eq(tenders.eligibilityStatus, "not_relevant")),
+          and(eq(tenders.isManualOverride, true), eq(tenders.overrideStatus, "not_relevant"))
+        )
+      );
     
+    // Count not eligible tenders
     const [notEligibleResult] = await db
       .select({ count: sql<number>`count(*)` })
       .from(tenders)
-      .where(eq(tenders.analysisStatus, "not_eligible"));
+      .where(
+        or(
+          and(eq(tenders.isManualOverride, false), eq(tenders.eligibilityStatus, "not_eligible")),
+          and(eq(tenders.isManualOverride, true), eq(tenders.overrideStatus, "not_eligible"))
+        )
+      );
+    
+    // Count manual review tenders
+    const [manualReviewResult] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(tenders)
+      .where(eq(tenders.eligibilityStatus, "manual_review"));
     
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -244,9 +348,10 @@ export class DatabaseStorage implements IStorage {
     
     return {
       total: Number(totalResult?.count || 0),
-      fullMatch: Number(fullMatchResult?.count || 0),
-      pendingAnalysis: Number(pendingResult?.count || 0),
+      eligible: Number(eligibleResult?.count || 0),
+      notRelevant: Number(notRelevantResult?.count || 0),
       notEligible: Number(notEligibleResult?.count || 0),
+      manualReview: Number(manualReviewResult?.count || 0),
       todayUploads: Number(todayResult?.count || 0),
     };
   }
@@ -258,6 +363,7 @@ export class DatabaseStorage implements IStorage {
     await db.delete(tenderDocuments);
     await db.delete(tenders);
     await db.delete(excelUploads);
+    // Note: We keep negative keywords and company criteria as they are settings
   }
 }
 

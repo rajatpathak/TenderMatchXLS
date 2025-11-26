@@ -8,6 +8,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Form,
   FormControl,
@@ -23,11 +35,15 @@ import {
   Loader2,
   Building2,
   TrendingUp,
-  CheckCircle2
+  CheckCircle2,
+  Ban,
+  Plus,
+  X,
+  Trash2
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { CompanyCriteria } from "@shared/schema";
+import type { CompanyCriteria, NegativeKeyword } from "@shared/schema";
 
 const formSchema = z.object({
   turnoverCr: z.string().min(1, "Turnover is required"),
@@ -52,9 +68,16 @@ const availableProjectTypes = [
 export default function Settings() {
   const { toast } = useToast();
   const [isSaved, setIsSaved] = useState(false);
+  const [newKeyword, setNewKeyword] = useState("");
+  const [isAddingKeyword, setIsAddingKeyword] = useState(false);
+  const [keywordToDelete, setKeywordToDelete] = useState<NegativeKeyword | null>(null);
 
-  const { data: criteria, isLoading } = useQuery<CompanyCriteria>({
+  const { data: criteria, isLoading: criteriaLoading } = useQuery<CompanyCriteria>({
     queryKey: ["/api/company-criteria"],
+  });
+
+  const { data: negativeKeywords = [], isLoading: keywordsLoading } = useQuery<NegativeKeyword[]>({
+    queryKey: ["/api/negative-keywords"],
   });
 
   const form = useForm<FormValues>({
@@ -98,165 +121,378 @@ export default function Settings() {
     },
   });
 
+  const addKeywordMutation = useMutation({
+    mutationFn: async (keyword: string) => {
+      return apiRequest("POST", "/api/negative-keywords", { keyword });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Keyword Added",
+        description: "The negative keyword has been added.",
+      });
+      setNewKeyword("");
+      setIsAddingKeyword(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/negative-keywords"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders/status", "not_relevant"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add keyword",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteKeywordMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return apiRequest("DELETE", `/api/negative-keywords/${id}`);
+    },
+    onSuccess: () => {
+      toast({
+        title: "Keyword Deleted",
+        description: "The negative keyword has been removed. Tenders are being re-analyzed.",
+      });
+      setKeywordToDelete(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/negative-keywords"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders/status", "eligible"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders/status", "not_eligible"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders/status", "not_relevant"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders/status", "manual_review"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete keyword",
+        variant: "destructive",
+      });
+      setKeywordToDelete(null);
+    },
+  });
+
   const onSubmit = (data: FormValues) => {
     updateMutation.mutate(data);
   };
 
+  const handleAddKeyword = () => {
+    if (newKeyword.trim()) {
+      addKeywordMutation.mutate(newKeyword.trim());
+    }
+  };
+
+  const confirmDeleteKeyword = () => {
+    if (keywordToDelete) {
+      deleteKeywordMutation.mutate(keywordToDelete.id);
+    }
+  };
+
   return (
-    <div className="p-6 max-w-3xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-          <SettingsIcon className="w-6 h-6" />
-          Settings
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Configure your company criteria for tender matching
-        </p>
+    <div className="p-6 h-full overflow-y-auto">
+      <div className="max-w-3xl mx-auto space-y-6">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+            <SettingsIcon className="w-6 h-6" />
+            Settings
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Configure your company criteria and negative keywords for tender matching
+          </p>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Building2 className="w-5 h-5" />
+              Company Criteria
+            </CardTitle>
+            <CardDescription>
+              Define your company's eligibility criteria. Tenders will be matched against these requirements.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {criteriaLoading ? (
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-32" />
+                  <div className="grid grid-cols-2 gap-3">
+                    {[...Array(6)].map((_, i) => (
+                      <Skeleton key={i} className="h-6" />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                  <FormField
+                    control={form.control}
+                    name="turnoverCr"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="flex items-center gap-2">
+                          <TrendingUp className="w-4 h-4" />
+                          Average Turnover (in Crores)
+                        </FormLabel>
+                        <FormControl>
+                          <div className="relative">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              placeholder="4"
+                              {...field}
+                              className="pr-12"
+                              data-testid="input-turnover"
+                            />
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                              Cr
+                            </span>
+                          </div>
+                        </FormControl>
+                        <FormDescription>
+                          Your company's average annual turnover. Tenders requiring higher turnover will show lower match percentage.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="projectTypes"
+                    render={() => (
+                      <FormItem>
+                        <div className="mb-4">
+                          <FormLabel>Project Types</FormLabel>
+                          <FormDescription>
+                            Select the types of projects your company handles. Tenders will be tagged and matched based on these.
+                          </FormDescription>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {availableProjectTypes.map((item) => (
+                            <FormField
+                              key={item.id}
+                              control={form.control}
+                              name="projectTypes"
+                              render={({ field }) => {
+                                return (
+                                  <FormItem
+                                    key={item.id}
+                                    className="flex items-center space-x-3 space-y-0"
+                                  >
+                                    <FormControl>
+                                      <Checkbox
+                                        checked={field.value?.includes(item.id)}
+                                        onCheckedChange={(checked) => {
+                                          return checked
+                                            ? field.onChange([...field.value, item.id])
+                                            : field.onChange(
+                                                field.value?.filter(
+                                                  (value) => value !== item.id
+                                                )
+                                              );
+                                        }}
+                                        data-testid={`checkbox-project-${item.id.toLowerCase().replace(/\s+/g, '-')}`}
+                                      />
+                                    </FormControl>
+                                    <FormLabel className="font-normal cursor-pointer">
+                                      {item.label}
+                                    </FormLabel>
+                                  </FormItem>
+                                );
+                              }}
+                            />
+                          ))}
+                        </div>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="flex justify-end pt-4 border-t">
+                    <Button 
+                      type="submit" 
+                      disabled={updateMutation.isPending || isSaved}
+                      data-testid="button-save-settings"
+                    >
+                      {updateMutation.isPending ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Saving...
+                        </>
+                      ) : isSaved ? (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 mr-2" />
+                          Saved
+                        </>
+                      ) : (
+                        <>
+                          <Save className="w-4 h-4 mr-2" />
+                          Save Settings
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </form>
+              </Form>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Ban className="w-5 h-5" />
+              Negative Keywords
+            </CardTitle>
+            <CardDescription>
+              Tenders containing these keywords will be automatically marked as "Not Relevant" and filtered out.
+              Examples: "data acquisition system", "Email purchase", "Hardware procurement"
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {keywordsLoading ? (
+              <div className="space-y-3">
+                {[...Array(3)].map((_, i) => (
+                  <Skeleton key={i} className="h-8 w-full" />
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {isAddingKeyword ? (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      placeholder="Enter negative keyword..."
+                      value={newKeyword}
+                      onChange={(e) => setNewKeyword(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddKeyword();
+                        }
+                        if (e.key === 'Escape') {
+                          setIsAddingKeyword(false);
+                          setNewKeyword("");
+                        }
+                      }}
+                      autoFocus
+                      data-testid="input-new-keyword"
+                    />
+                    <Button
+                      onClick={handleAddKeyword}
+                      disabled={addKeywordMutation.isPending || !newKeyword.trim()}
+                      data-testid="button-save-keyword"
+                    >
+                      {addKeywordMutation.isPending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="w-4 h-4" />
+                      )}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        setIsAddingKeyword(false);
+                        setNewKeyword("");
+                      }}
+                      data-testid="button-cancel-keyword"
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsAddingKeyword(true)}
+                    data-testid="button-add-keyword"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Keyword
+                  </Button>
+                )}
+
+                {negativeKeywords.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Ban className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                    <p>No negative keywords defined</p>
+                    <p className="text-sm">Add keywords to filter out irrelevant tenders</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {negativeKeywords.map((kw) => (
+                      <Badge
+                        key={kw.id}
+                        variant="outline"
+                        className="flex items-center gap-2 py-1.5 px-3 text-sm"
+                        data-testid={`badge-keyword-${kw.id}`}
+                      >
+                        <span>{kw.keyword}</span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-4 w-4 p-0 hover:bg-destructive/10"
+                          onClick={() => setKeywordToDelete(kw)}
+                          disabled={deleteKeywordMutation.isPending}
+                          data-testid={`button-delete-keyword-${kw.id}`}
+                        >
+                          {deleteKeywordMutation.isPending && keywordToDelete?.id === kw.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <X className="w-3 h-3 text-muted-foreground hover:text-destructive" />
+                          )}
+                        </Button>
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+
+                {negativeKeywords.length > 0 && (
+                  <p className="text-xs text-muted-foreground pt-2 border-t">
+                    {negativeKeywords.length} keyword{negativeKeywords.length !== 1 ? 's' : ''} configured. 
+                    Tenders matching any of these keywords will be automatically filtered to "Not Relevant".
+                  </p>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Building2 className="w-5 h-5" />
-            Company Criteria
-          </CardTitle>
-          <CardDescription>
-            Define your company's eligibility criteria. Tenders will be matched against these requirements.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="space-y-6">
-              <div className="space-y-2">
-                <Skeleton className="h-4 w-32" />
-                <Skeleton className="h-10 w-full" />
-              </div>
-              <div className="space-y-2">
-                <Skeleton className="h-4 w-32" />
-                <div className="grid grid-cols-2 gap-3">
-                  {[...Array(6)].map((_, i) => (
-                    <Skeleton key={i} className="h-6" />
-                  ))}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                <FormField
-                  control={form.control}
-                  name="turnoverCr"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="flex items-center gap-2">
-                        <TrendingUp className="w-4 h-4" />
-                        Average Turnover (in Crores)
-                      </FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <Input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            placeholder="4"
-                            {...field}
-                            className="pr-12"
-                            data-testid="input-turnover"
-                          />
-                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                            Cr
-                          </span>
-                        </div>
-                      </FormControl>
-                      <FormDescription>
-                        Your company's average annual turnover. Tenders requiring higher turnover will show lower match percentage.
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="projectTypes"
-                  render={() => (
-                    <FormItem>
-                      <div className="mb-4">
-                        <FormLabel>Project Types</FormLabel>
-                        <FormDescription>
-                          Select the types of projects your company handles. Tenders will be tagged and matched based on these.
-                        </FormDescription>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {availableProjectTypes.map((item) => (
-                          <FormField
-                            key={item.id}
-                            control={form.control}
-                            name="projectTypes"
-                            render={({ field }) => {
-                              return (
-                                <FormItem
-                                  key={item.id}
-                                  className="flex items-center space-x-3 space-y-0"
-                                >
-                                  <FormControl>
-                                    <Checkbox
-                                      checked={field.value?.includes(item.id)}
-                                      onCheckedChange={(checked) => {
-                                        return checked
-                                          ? field.onChange([...field.value, item.id])
-                                          : field.onChange(
-                                              field.value?.filter(
-                                                (value) => value !== item.id
-                                              )
-                                            );
-                                      }}
-                                      data-testid={`checkbox-project-${item.id.toLowerCase().replace(/\s+/g, '-')}`}
-                                    />
-                                  </FormControl>
-                                  <FormLabel className="font-normal cursor-pointer">
-                                    {item.label}
-                                  </FormLabel>
-                                </FormItem>
-                              );
-                            }}
-                          />
-                        ))}
-                      </div>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <div className="flex justify-end pt-4 border-t">
-                  <Button 
-                    type="submit" 
-                    disabled={updateMutation.isPending || isSaved}
-                    data-testid="button-save-settings"
-                  >
-                    {updateMutation.isPending ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Saving...
-                      </>
-                    ) : isSaved ? (
-                      <>
-                        <CheckCircle2 className="w-4 h-4 mr-2" />
-                        Saved
-                      </>
-                    ) : (
-                      <>
-                        <Save className="w-4 h-4 mr-2" />
-                        Save Settings
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </form>
-            </Form>
-          )}
-        </CardContent>
-      </Card>
+      <AlertDialog open={keywordToDelete !== null} onOpenChange={() => setKeywordToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Negative Keyword</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete the keyword "{keywordToDelete?.keyword}"?
+              This will re-analyze all tenders that were filtered by this keyword, which may take a moment.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete-keyword">Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmDeleteKeyword}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete-keyword"
+            >
+              {deleteKeywordMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

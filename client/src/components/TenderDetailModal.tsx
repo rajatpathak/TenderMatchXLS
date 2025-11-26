@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -8,6 +10,19 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { 
   Calendar, 
   IndianRupee, 
@@ -24,10 +39,16 @@ import {
   TrendingUp,
   ExternalLink,
   Copy,
-  X
+  PenLine,
+  ChevronDown,
+  Undo2,
+  Ban,
+  XCircle,
+  Loader2
 } from "lucide-react";
 import type { Tender } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 interface TenderDetailModalProps {
   tender: Tender | null;
@@ -44,8 +65,82 @@ const tagIcons: Record<string, React.ElementType> = {
   'Mobile': Smartphone,
 };
 
+const overrideReasons = [
+  { value: "wrong_categorization", label: "Wrong Categorization" },
+  { value: "not_our_domain", label: "Not Our Domain/Industry" },
+  { value: "too_small_value", label: "Contract Value Too Small" },
+  { value: "deadline_passed", label: "Deadline Already Passed" },
+  { value: "duplicate_tender", label: "Duplicate/Already Applied" },
+  { value: "geographic_restriction", label: "Geographic Restriction" },
+  { value: "experience_requirement", label: "Experience Requirement Not Met" },
+  { value: "technical_requirement", label: "Technical Capability Not Met" },
+  { value: "other", label: "Other Reason" },
+];
+
 export function TenderDetailModal({ tender, open, onClose, onViewCorrigendum }: TenderDetailModalProps) {
   const { toast } = useToast();
+  const [showOverridePanel, setShowOverridePanel] = useState(false);
+  const [overrideStatus, setOverrideStatus] = useState<string>("");
+  const [overrideReason, setOverrideReason] = useState<string>("");
+  const [overrideComment, setOverrideComment] = useState<string>("");
+
+  const overrideMutation = useMutation({
+    mutationFn: async (data: { overrideStatus: string; overrideReason: string; overrideComment: string }) => {
+      return apiRequest("POST", `/api/tenders/${tender?.id}/override`, data);
+    },
+    onSuccess: () => {
+      toast({
+        title: "Override Applied",
+        description: "The tender status has been manually overridden.",
+      });
+      setShowOverridePanel(false);
+      setOverrideStatus("");
+      setOverrideReason("");
+      setOverrideComment("");
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders", tender?.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders/status", "eligible"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders/status", "not_eligible"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders/status", "not_relevant"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders/status", "manual_review"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+      onClose();
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Override Failed",
+        description: error.message || "Failed to override tender status",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const undoOverrideMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("DELETE", `/api/tenders/${tender?.id}/override`);
+    },
+    onSuccess: () => {
+      toast({
+        title: "Override Removed",
+        description: "The tender will be re-analyzed with original criteria.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders", tender?.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders/status", "eligible"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders/status", "not_eligible"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders/status", "not_relevant"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders/status", "manual_review"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+      onClose();
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed",
+        description: error.message || "Failed to remove override",
+        variant: "destructive",
+      });
+    },
+  });
 
   if (!tender) return null;
 
@@ -111,13 +206,31 @@ export function TenderDetailModal({ tender, open, onClose, onViewCorrigendum }: 
     });
   };
 
+  const handleOverride = () => {
+    if (!overrideStatus || !overrideReason) {
+      toast({
+        title: "Missing Information",
+        description: "Please select both status and reason for override",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    const reasonLabel = overrideReasons.find(r => r.value === overrideReason)?.label || overrideReason;
+    overrideMutation.mutate({
+      overrideStatus,
+      overrideReason: reasonLabel,
+      overrideComment,
+    });
+  };
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh]">
         <DialogHeader className="pb-0">
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1">
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
                 <button 
                   onClick={() => copyToClipboard(tender.t247Id)}
                   className="font-mono text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
@@ -129,6 +242,12 @@ export function TenderDetailModal({ tender, open, onClose, onViewCorrigendum }: 
                 {tender.isCorrigendum && (
                   <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800">
                     Corrigendum
+                  </Badge>
+                )}
+                {tender.isManualOverride && (
+                  <Badge variant="outline" className="text-xs bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800 flex items-center gap-1">
+                    <PenLine className="w-3 h-3" />
+                    Manual Override
                   </Badge>
                 )}
               </div>
@@ -174,6 +293,61 @@ export function TenderDetailModal({ tender, open, onClose, onViewCorrigendum }: 
                 );
               })}
             </div>
+
+            {tender.isManualOverride && (
+              <div className="rounded-lg bg-blue-500/10 border border-blue-200 dark:border-blue-800 p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
+                    <PenLine className="w-5 h-5" />
+                    <span className="font-medium">Manual Override Active</span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => undoOverrideMutation.mutate()}
+                    disabled={undoOverrideMutation.isPending}
+                    data-testid="button-undo-override"
+                  >
+                    {undoOverrideMutation.isPending ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <>
+                        <Undo2 className="w-4 h-4 mr-1" />
+                        Undo Override
+                      </>
+                    )}
+                  </Button>
+                </div>
+                <div className="mt-2 text-sm">
+                  <p className="text-foreground">
+                    <span className="text-muted-foreground">Reason:</span> {tender.overrideReason}
+                  </p>
+                  {tender.overrideComment && (
+                    <p className="text-foreground mt-1">
+                      <span className="text-muted-foreground">Comment:</span> {tender.overrideComment}
+                    </p>
+                  )}
+                  {tender.overrideAt && (
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Overridden on {formatDate(tender.overrideAt)}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {tender.notRelevantKeyword && (
+              <div className="rounded-lg bg-gray-500/10 border border-gray-200 dark:border-gray-800 p-4">
+                <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                  <Ban className="w-5 h-5" />
+                  <span className="font-medium">Matched Negative Keyword</span>
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">
+                  This tender was marked as "Not Relevant" because it contains the keyword: 
+                  <span className="font-medium text-foreground ml-1">"{tender.notRelevantKeyword}"</span>
+                </p>
+              </div>
+            )}
 
             {(tender.isMsmeExempted || tender.isStartupExempted) && (
               <div className="rounded-lg bg-purple-500/10 border border-purple-200 dark:border-purple-800 p-4">
@@ -296,6 +470,110 @@ export function TenderDetailModal({ tender, open, onClose, onViewCorrigendum }: 
                     {tender.checklist}
                   </div>
                 </div>
+              </>
+            )}
+
+            {!tender.isManualOverride && (
+              <>
+                <Separator />
+                <Collapsible open={showOverridePanel} onOpenChange={setShowOverridePanel}>
+                  <CollapsibleTrigger asChild>
+                    <Button 
+                      variant="outline" 
+                      className="w-full justify-between"
+                      data-testid="button-toggle-override"
+                    >
+                      <span className="flex items-center gap-2">
+                        <PenLine className="w-4 h-4" />
+                        Manual Override Status
+                      </span>
+                      <ChevronDown className={`w-4 h-4 transition-transform ${showOverridePanel ? 'rotate-180' : ''}`} />
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="pt-4 space-y-4">
+                    <div className="text-sm text-muted-foreground">
+                      Override the automated categorization if you believe it's incorrect.
+                    </div>
+                    
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-sm font-medium text-foreground block mb-1.5">
+                          Change Status To
+                        </label>
+                        <Select value={overrideStatus} onValueChange={setOverrideStatus}>
+                          <SelectTrigger data-testid="select-override-status">
+                            <SelectValue placeholder="Select new status..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="not_eligible">
+                              <span className="flex items-center gap-2">
+                                <XCircle className="w-4 h-4 text-red-500" />
+                                Not Eligible
+                              </span>
+                            </SelectItem>
+                            <SelectItem value="not_relevant">
+                              <span className="flex items-center gap-2">
+                                <Ban className="w-4 h-4 text-gray-500" />
+                                Not Relevant
+                              </span>
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div>
+                        <label className="text-sm font-medium text-foreground block mb-1.5">
+                          Reason for Override
+                        </label>
+                        <Select value={overrideReason} onValueChange={setOverrideReason}>
+                          <SelectTrigger data-testid="select-override-reason">
+                            <SelectValue placeholder="Select reason..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {overrideReasons.map((reason) => (
+                              <SelectItem key={reason.value} value={reason.value}>
+                                {reason.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div>
+                        <label className="text-sm font-medium text-foreground block mb-1.5">
+                          Additional Comment (Optional)
+                        </label>
+                        <Textarea
+                          placeholder="Add any additional notes..."
+                          value={overrideComment}
+                          onChange={(e) => setOverrideComment(e.target.value)}
+                          className="resize-none"
+                          rows={2}
+                          data-testid="textarea-override-comment"
+                        />
+                      </div>
+
+                      <Button
+                        onClick={handleOverride}
+                        disabled={!overrideStatus || !overrideReason || overrideMutation.isPending}
+                        className="w-full"
+                        data-testid="button-apply-override"
+                      >
+                        {overrideMutation.isPending ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Applying...
+                          </>
+                        ) : (
+                          <>
+                            <PenLine className="w-4 h-4 mr-2" />
+                            Apply Override
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
               </>
             )}
           </div>

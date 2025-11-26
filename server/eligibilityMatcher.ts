@@ -1,4 +1,6 @@
-import type { CompanyCriteria, InsertTender } from "@shared/schema";
+import type { CompanyCriteria, InsertTender, NegativeKeyword } from "@shared/schema";
+
+export type EligibilityStatus = "eligible" | "not_eligible" | "not_relevant" | "manual_review";
 
 export interface MatchResult {
   matchPercentage: number;
@@ -6,6 +8,8 @@ export interface MatchResult {
   isStartupExempted: boolean;
   tags: string[];
   analysisStatus: "analyzed" | "unable_to_analyze" | "not_eligible";
+  eligibilityStatus: EligibilityStatus;
+  notRelevantKeyword: string | null;
   turnoverRequired: number | null;
   turnoverMet: boolean;
 }
@@ -170,9 +174,26 @@ function checkStartupExemption(text: string): boolean {
   return false;
 }
 
+// Check if tender matches any negative keywords
+function checkNegativeKeywords(text: string, negativeKeywords: NegativeKeyword[]): string | null {
+  if (!text || negativeKeywords.length === 0) return null;
+  
+  const lowerText = text.toLowerCase();
+  
+  for (const kw of negativeKeywords) {
+    const keyword = kw.keyword.toLowerCase();
+    if (lowerText.includes(keyword)) {
+      return kw.keyword; // Return the matched keyword
+    }
+  }
+  
+  return null;
+}
+
 export function analyzeEligibility(
   tender: Partial<InsertTender>,
   criteria: CompanyCriteria,
+  negativeKeywords: NegativeKeyword[] = [],
   excelMsmeExemption: boolean = false,
   excelStartupExemption: boolean = false
 ): MatchResult {
@@ -182,6 +203,22 @@ export function analyzeEligibility(
     tender.title || '',
   ].join(' ');
   
+  // Check for negative keywords first (mark as not relevant)
+  const matchedNegativeKeyword = checkNegativeKeywords(eligibilityText, negativeKeywords);
+  if (matchedNegativeKeyword) {
+    return {
+      matchPercentage: 0,
+      isMsmeExempted: false,
+      isStartupExempted: false,
+      tags: [],
+      analysisStatus: "analyzed",
+      eligibilityStatus: "not_relevant",
+      notRelevantKeyword: matchedNegativeKeyword,
+      turnoverRequired: null,
+      turnoverMet: false,
+    };
+  }
+  
   if (!eligibilityText.trim()) {
     return {
       matchPercentage: 0,
@@ -189,6 +226,8 @@ export function analyzeEligibility(
       isStartupExempted: excelStartupExemption,
       tags: [],
       analysisStatus: "unable_to_analyze",
+      eligibilityStatus: "manual_review",
+      notRelevantKeyword: null,
       turnoverRequired: null,
       turnoverMet: false,
     };
@@ -255,8 +294,8 @@ export function analyzeEligibility(
   
   // 3. Check for negative criteria - construction, civil works etc (20% weight)
   totalCriteria += 20;
-  const negativeKeywords = ['civil', 'construction', 'building', 'road', 'bridge', 'infrastructure', 'medical', 'pharmaceutical', 'electrical', 'mechanical'];
-  const hasNegative = negativeKeywords.some(kw => eligibilityText.toLowerCase().includes(kw));
+  const hardcodedNegativeWords = ['civil', 'construction', 'building', 'road', 'bridge', 'infrastructure', 'medical', 'pharmaceutical', 'electrical', 'mechanical'];
+  const hasNegative = hardcodedNegativeWords.some(kw => eligibilityText.toLowerCase().includes(kw));
   
   if (!hasNegative) {
     matchScore += 20;
@@ -273,12 +312,14 @@ export function analyzeEligibility(
   // Ensure percentage is within bounds
   matchPercentage = Math.max(0, Math.min(100, matchPercentage));
   
-  // Determine analysis status
+  // Determine analysis status and eligibility status
   let analysisStatus: "analyzed" | "unable_to_analyze" | "not_eligible" = "analyzed";
+  let eligibilityStatus: EligibilityStatus = "eligible";
   
   // If turnover requirement exists and company doesn't meet it (and no exemption), mark as NOT ELIGIBLE
   if (!turnoverMet && requiredTurnover !== null) {
     analysisStatus = "not_eligible";
+    eligibilityStatus = "not_eligible";
     matchPercentage = Math.min(matchPercentage, 40); // Cap at 40% for not eligible
   }
   
@@ -288,6 +329,8 @@ export function analyzeEligibility(
     isStartupExempted,
     tags,
     analysisStatus,
+    eligibilityStatus,
+    notRelevantKeyword: null,
     turnoverRequired: requiredTurnover,
     turnoverMet,
   };

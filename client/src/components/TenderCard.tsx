@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { 
   Calendar, 
   IndianRupee, 
@@ -15,7 +16,11 @@ import {
   Globe,
   Smartphone,
   Monitor,
-  TrendingUp
+  TrendingUp,
+  Ban,
+  XCircle,
+  FileSearch,
+  PenLine
 } from "lucide-react";
 import type { Tender } from "@shared/schema";
 
@@ -30,6 +35,35 @@ const tagIcons: Record<string, React.ElementType> = {
   'Software': Code,
   'Website': Globe,
   'Mobile': Smartphone,
+};
+
+const statusConfig: Record<string, { icon: React.ElementType; color: string; label: string }> = {
+  'eligible': {
+    icon: CheckCircle2,
+    color: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800",
+    label: "Eligible"
+  },
+  'not_eligible': {
+    icon: XCircle,
+    color: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800",
+    label: "Not Eligible"
+  },
+  'not_relevant': {
+    icon: Ban,
+    color: "bg-gray-500/10 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-800",
+    label: "Not Relevant"
+  },
+  'manual_review': {
+    icon: FileSearch,
+    color: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800",
+    label: "Manual Review"
+  },
+};
+
+const defaultStatusInfo = {
+  icon: CheckCircle2,
+  color: "bg-gray-500/10 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-800",
+  label: "Unknown"
 };
 
 export function TenderCard({ tender, onClick }: TenderCardProps) {
@@ -86,6 +120,17 @@ export function TenderCard({ tender, onClick }: TenderCardProps) {
     });
   };
 
+  const getEffectiveStatus = () => {
+    if (tender.isManualOverride && tender.overrideStatus) {
+      return tender.overrideStatus;
+    }
+    return tender.eligibilityStatus || 'eligible';
+  };
+  
+  const effectiveStatus = getEffectiveStatus();
+  const statusInfo = statusConfig[effectiveStatus] || defaultStatusInfo;
+  const StatusIcon = statusInfo.icon;
+
   return (
     <Card 
       className="hover-elevate cursor-pointer transition-shadow"
@@ -95,7 +140,7 @@ export function TenderCard({ tender, onClick }: TenderCardProps) {
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
               <span className="font-mono text-xs text-muted-foreground">
                 {tender.t247Id}
               </span>
@@ -104,20 +149,45 @@ export function TenderCard({ tender, onClick }: TenderCardProps) {
                   Corrigendum
                 </Badge>
               )}
+              {tender.isManualOverride && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge variant="outline" className="text-xs bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800 flex items-center gap-1">
+                      <PenLine className="w-3 h-3" />
+                      Override
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="font-medium">{tender.overrideReason}</p>
+                    {tender.overrideComment && (
+                      <p className="text-xs text-muted-foreground mt-1">{tender.overrideComment}</p>
+                    )}
+                  </TooltipContent>
+                </Tooltip>
+              )}
             </div>
             <h3 className="font-semibold text-foreground line-clamp-2 text-sm leading-snug">
               {tender.title || "Untitled Tender"}
             </h3>
           </div>
-          <Badge 
-            className={`shrink-0 flex items-center gap-1 ${getMatchColor()}`}
-            variant="outline"
-          >
-            {getMatchIcon()}
-            {tender.isMsmeExempted || tender.isStartupExempted 
-              ? "Exempted" 
-              : `${tender.matchPercentage}%`}
-          </Badge>
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            <Badge 
+              className={`flex items-center gap-1 ${getMatchColor()}`}
+              variant="outline"
+            >
+              {getMatchIcon()}
+              {tender.isMsmeExempted || tender.isStartupExempted 
+                ? "Exempted" 
+                : `${tender.matchPercentage}%`}
+            </Badge>
+            <Badge 
+              className={`flex items-center gap-1 text-xs ${statusInfo.color}`}
+              variant="outline"
+            >
+              <StatusIcon className="w-3 h-3" />
+              {statusInfo.label}
+            </Badge>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="pt-0 space-y-3">
@@ -152,6 +222,15 @@ export function TenderCard({ tender, onClick }: TenderCardProps) {
               <span className="text-muted-foreground">Deadline: </span>
               <span className="font-medium text-foreground">{formatDate(tender.submissionDeadline)}</span>
             </div>
+          </div>
+        )}
+
+        {tender.notRelevantKeyword && (
+          <div className="flex items-center gap-2 text-sm bg-gray-500/10 p-2 rounded-md">
+            <Ban className="w-4 h-4 text-gray-500 shrink-0" />
+            <span className="text-muted-foreground text-xs">
+              Matched keyword: <span className="font-medium">"{tender.notRelevantKeyword}"</span>
+            </span>
           </div>
         )}
 
