@@ -137,11 +137,12 @@ export async function setupAuth(app: Express) {
   app.set("trust proxy", 1);
   app.use(getSession());
 
-  // Login endpoint
+  // Login endpoint - supports both admin and team members
   app.post("/api/login", async (req, res) => {
     const { username, password } = req.body;
     const config = getAdminConfig();
     
+    // Check admin credentials first
     if (username === config.username && await verifyPassword(password)) {
       // Ensure admin user exists in database for foreign key references
       await ensureAdminUserExists();
@@ -152,6 +153,7 @@ export async function setupAuth(app: Express) {
         firstName: config.firstName,
         lastName: config.lastName,
         email: config.email,
+        role: 'admin',
       };
       res.json({ 
         success: true, 
@@ -160,11 +162,49 @@ export async function setupAuth(app: Express) {
           firstName: config.firstName,
           lastName: config.lastName,
           email: config.email,
+          role: 'admin',
         }
       });
-    } else {
-      res.status(401).json({ message: "Invalid username or password" });
+      return;
     }
+    
+    // Check team members
+    try {
+      const teamMember = await storage.getTeamMemberByUsername(username);
+      if (teamMember && teamMember.isActive && teamMember.password === password) {
+        // Update last login time
+        await storage.updateTeamMemberLastLogin(teamMember.id);
+        
+        const nameParts = teamMember.fullName.split(' ');
+        const firstName = nameParts[0] || teamMember.fullName;
+        const lastName = nameParts.slice(1).join(' ') || '';
+        
+        (req.session as any).user = {
+          id: `team_${teamMember.id}`,
+          username: teamMember.username,
+          firstName,
+          lastName,
+          email: teamMember.email || `${teamMember.username}@tendermatch.com`,
+          role: teamMember.role,
+          teamMemberId: teamMember.id,
+        };
+        res.json({ 
+          success: true, 
+          user: {
+            id: `team_${teamMember.id}`,
+            firstName,
+            lastName,
+            email: teamMember.email || `${teamMember.username}@tendermatch.com`,
+            role: teamMember.role,
+          }
+        });
+        return;
+      }
+    } catch (error) {
+      console.error("Team member login check error:", error);
+    }
+    
+    res.status(401).json({ message: "Invalid username or password" });
   });
 
   // Logout endpoint
