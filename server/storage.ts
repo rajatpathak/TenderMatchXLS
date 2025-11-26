@@ -505,8 +505,9 @@ export class DatabaseStorage implements IStorage {
       for (let i = 1; i < tendersWithId.length; i++) {
         const oldTender = tendersWithId[i];
         
-        // Delete related corrigendum changes first
+        // Delete related corrigendum changes first (both tenderId and originalTenderId)
         await db.delete(corrigendumChanges).where(eq(corrigendumChanges.tenderId, oldTender.id));
+        await db.delete(corrigendumChanges).where(eq(corrigendumChanges.originalTenderId, oldTender.id));
         
         // Delete related documents
         await db.delete(tenderDocuments).where(eq(tenderDocuments.tenderId, oldTender.id));
