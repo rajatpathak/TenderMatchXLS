@@ -49,10 +49,14 @@ import {
   RefreshCw,
   ChevronRight,
   Flag,
+  UserPlus,
+  CheckCircle,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format, formatDistanceToNow, isPast } from "date-fns";
+import { AssignTenderDialog } from "@/components/AssignTenderDialog";
+import { Link } from "wouter";
 import type { TenderAssignment, Tender, TeamMember } from "@shared/schema";
 
 type AssignmentWithDetails = TenderAssignment & {
@@ -95,6 +99,8 @@ export default function AssignmentsHub() {
   const [activeTab, setActiveTab] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
+  const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [tenderToAssign, setTenderToAssign] = useState<Tender | null>(null);
 
   const { data: assignments = [], isLoading, refetch } = useQuery<AssignmentWithDetails[]>({
     queryKey: ["/api/assignments", activeTab, priorityFilter, assigneeFilter],
@@ -128,6 +134,18 @@ export default function AssignmentsHub() {
   }>({
     queryKey: ["/api/workflow-stats"],
   });
+
+  const { data: eligibleTenders = [] } = useQuery<Tender[]>({
+    queryKey: ["/api/tenders/status", "eligible"],
+  });
+
+  const assignedTenderIds = new Set(assignments.map(a => a.tenderId));
+  const unassignedTenders = eligibleTenders.filter(t => !assignedTenderIds.has(t.id));
+
+  const handleAssignTender = (tender: Tender) => {
+    setTenderToAssign(tender);
+    setAssignDialogOpen(true);
+  };
 
   const updateStageMutation = useMutation({
     mutationFn: async (data: { id: number; stage: string; changedBy: number; note?: string }) => {
@@ -280,7 +298,22 @@ export default function AssignmentsHub() {
           </Button>
         </div>
 
-        <div className="grid grid-cols-4 gap-4 mt-6">
+        <div className="grid grid-cols-5 gap-4 mt-6">
+          <Card className={`hover-elevate ${unassignedTenders.length > 0 ? "border-blue-200 dark:border-blue-800" : ""}`}>
+            <CardContent className="pt-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Unassigned</p>
+                  <p className={`text-2xl font-bold ${unassignedTenders.length > 0 ? "text-blue-600 dark:text-blue-400" : "text-foreground"}`}>
+                    {unassignedTenders.length}
+                  </p>
+                </div>
+                <div className="p-3 rounded-full bg-blue-100 dark:bg-blue-900">
+                  <UserPlus className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
           <Card className="hover-elevate">
             <CardContent className="pt-4">
               <div className="flex items-center justify-between">
@@ -334,6 +367,70 @@ export default function AssignmentsHub() {
             </CardContent>
           </Card>
         </div>
+
+        {unassignedTenders.length > 0 && (
+          <Card className="mt-4 border-blue-200 dark:border-blue-800">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <UserPlus className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                  <CardTitle className="text-base">Ready to Assign ({unassignedTenders.length})</CardTitle>
+                </div>
+                <Link href="/tenders/eligible">
+                  <Button variant="outline" size="sm" className="gap-1">
+                    View All
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </Link>
+              </div>
+              <CardDescription>Eligible tenders waiting to be assigned to bidders</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-2">
+                {unassignedTenders.slice(0, 5).map((tender) => (
+                  <div 
+                    key={tender.id} 
+                    className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                    data-testid={`unassigned-tender-${tender.id}`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="font-mono text-muted-foreground">{tender.t247Id}</span>
+                        <span className="text-foreground font-medium truncate">{tender.title}</span>
+                      </div>
+                      <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <IndianRupee className="w-3 h-3" />
+                          {formatLakhs(tender.estimatedValue)}
+                        </span>
+                        {tender.submissionDeadline && (
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            {format(new Date(tender.submissionDeadline), "dd MMM yyyy")}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => handleAssignTender(tender)}
+                      className="gap-1 shrink-0"
+                      data-testid={`button-assign-${tender.id}`}
+                    >
+                      <UserPlus className="w-4 h-4" />
+                      Assign
+                    </Button>
+                  </div>
+                ))}
+                {unassignedTenders.length > 5 && (
+                  <p className="text-center text-sm text-muted-foreground pt-2">
+                    +{unassignedTenders.length - 5} more tenders available
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       <div className="flex-1 overflow-hidden flex flex-col">
@@ -601,6 +698,15 @@ export default function AssignmentsHub() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AssignTenderDialog
+        tender={tenderToAssign}
+        open={assignDialogOpen}
+        onClose={() => {
+          setAssignDialogOpen(false);
+          setTenderToAssign(null);
+        }}
+      />
     </div>
   );
 }

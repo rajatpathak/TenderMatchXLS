@@ -22,7 +22,8 @@ import {
   XCircle,
   FileSearch,
   PenLine,
-  ThumbsDown
+  ThumbsDown,
+  UserPlus,
 } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -93,6 +94,9 @@ interface TenderCardProps {
   tender: Tender;
   onClick: () => void;
   showQuickActions?: boolean;
+  showAssignButton?: boolean;
+  onAssign?: (tender: Tender) => void;
+  isAssigned?: boolean;
 }
 
 const tagIcons: Record<string, React.ElementType> = {
@@ -132,7 +136,7 @@ const defaultStatusInfo = {
   label: "Unknown"
 };
 
-export function TenderCard({ tender, onClick, showQuickActions = true }: TenderCardProps) {
+export function TenderCard({ tender, onClick, showQuickActions = true, showAssignButton = false, onAssign, isAssigned = false }: TenderCardProps) {
   const { toast } = useToast();
   const matchPct = tender.matchPercentage ?? 0;
 
@@ -359,19 +363,47 @@ export function TenderCard({ tender, onClick, showQuickActions = true }: TenderC
                 +{(tender.tags?.length || 0) - 2}
               </Badge>
             )}
+            {isAssigned && (
+              <Badge variant="outline" className="text-xs bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
+                <Users className="w-3 h-3" />
+                Assigned
+              </Badge>
+            )}
           </div>
-          <Button 
-            size="icon" 
-            variant="ghost" 
-            className="shrink-0"
-            onClick={(e) => {
-              e.stopPropagation();
-              onClick();
-            }}
-            data-testid={`button-view-tender-${tender.id}`}
-          >
-            <Eye className="w-4 h-4" />
-          </Button>
+          <div className="flex items-center gap-1 shrink-0">
+            {showAssignButton && !isAssigned && onAssign && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    size="icon" 
+                    variant="ghost"
+                    className="text-blue-600 dark:text-blue-400 hover:bg-blue-500/10"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAssign(tender);
+                    }}
+                    data-testid={`button-assign-tender-${tender.id}`}
+                  >
+                    <UserPlus className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Assign this tender</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+            <Button 
+              size="icon" 
+              variant="ghost" 
+              onClick={(e) => {
+                e.stopPropagation();
+                onClick();
+              }}
+              data-testid={`button-view-tender-${tender.id}`}
+            >
+              <Eye className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
 
         {/* Quick Action Buttons */}

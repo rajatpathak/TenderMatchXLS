@@ -1641,6 +1641,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Tender ID, assignee, and assigner are required" });
       }
 
+      // Check if tender is already assigned to prevent duplicates
+      const existingAssignment = await storage.getAssignmentByTenderId(tenderId);
+      if (existingAssignment) {
+        return res.status(409).json({ message: "This tender is already assigned to someone else" });
+      }
+
       const assignment = await storage.createTenderAssignment({
         tenderId,
         assignedTo,

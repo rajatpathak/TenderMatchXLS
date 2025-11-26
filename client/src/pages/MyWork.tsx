@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -32,10 +33,13 @@ import {
   Flag,
   Timer,
   CheckCircle2,
+  HandMetal,
+  UserPlus,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format, formatDistanceToNow, isPast, differenceInDays } from "date-fns";
+import { AssignTenderDialog } from "@/components/AssignTenderDialog";
 import type { TenderAssignment, Tender, TeamMember } from "@shared/schema";
 
 type AssignmentWithDetails = TenderAssignment & {
@@ -92,6 +96,9 @@ export default function MyWork() {
   const [submissionBudget, setSubmissionBudget] = useState("");
   const [submissionRef, setSubmissionRef] = useState("");
   const [submissionNote, setSubmissionNote] = useState("");
+  const [activeTab, setActiveTab] = useState("my-work");
+  const [claimDialogOpen, setClaimDialogOpen] = useState(false);
+  const [tenderToClaim, setTenderToClaim] = useState<Tender | null>(null);
 
   const { data: myAssignments = [], isLoading } = useQuery<AssignmentWithDetails[]>({
     queryKey: ["/api/assignments/my"],
@@ -101,6 +108,27 @@ export default function MyWork() {
     queryKey: ["/api/me/team-member"],
     retry: false,
   });
+
+  const { data: allAssignments = [] } = useQuery<TenderAssignment[]>({
+    queryKey: ["/api/assignments"],
+  });
+
+  const { data: eligibleTenders = [] } = useQuery<Tender[]>({
+    queryKey: ["/api/tenders/status", "eligible"],
+  });
+
+  const assignedTenderIds = useMemo(() => {
+    return new Set(allAssignments.map(a => a.tenderId));
+  }, [allAssignments]);
+
+  const availableTenders = useMemo(() => {
+    return eligibleTenders.filter(t => !assignedTenderIds.has(t.id));
+  }, [eligibleTenders, assignedTenderIds]);
+
+  const handleClaimTender = (tender: Tender) => {
+    setTenderToClaim(tender);
+    setClaimDialogOpen(true);
+  };
 
   const updateStageMutation = useMutation({
     mutationFn: async (data: { id: number; stage: string; changedBy: number; note?: string }) => {
@@ -249,7 +277,22 @@ export default function MyWork() {
           </p>
         </div>
 
-        <div className="grid grid-cols-3 gap-4 mt-6">
+        <div className="grid grid-cols-4 gap-4 mt-6">
+          <Card className={`hover-elevate ${availableTenders.length > 0 ? "border-blue-200 dark:border-blue-800" : ""}`}>
+            <CardContent className="pt-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Available</p>
+                  <p className={`text-2xl font-bold ${availableTenders.length > 0 ? "text-blue-600 dark:text-blue-400" : "text-foreground"}`}>
+                    {availableTenders.length}
+                  </p>
+                </div>
+                <div className="p-3 rounded-full bg-blue-100 dark:bg-blue-900">
+                  <UserPlus className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
           <Card className="hover-elevate">
             <CardContent className="pt-4">
               <div className="flex items-center justify-between">
@@ -257,8 +300,8 @@ export default function MyWork() {
                   <p className="text-sm text-muted-foreground">Active Tasks</p>
                   <p className="text-2xl font-bold text-foreground">{activeAssignments.length}</p>
                 </div>
-                <div className="p-3 rounded-full bg-blue-100 dark:bg-blue-900">
-                  <Play className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                <div className="p-3 rounded-full bg-purple-100 dark:bg-purple-900">
+                  <Play className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                 </div>
               </div>
             </CardContent>
@@ -292,14 +335,106 @@ export default function MyWork() {
             </CardContent>
           </Card>
         </div>
+
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
+          <TabsList>
+            <TabsTrigger value="my-work" data-testid="tab-my-work">
+              My Work ({myAssignments.length})
+            </TabsTrigger>
+            <TabsTrigger value="available" data-testid="tab-available">
+              Available to Claim ({availableTenders.length})
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
       <ScrollArea className="flex-1 p-6">
-        {myAssignments.length === 0 ? (
+        {activeTab === "available" ? (
+          availableTenders.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
+              <CheckCircle2 className="w-12 h-12 mb-4 opacity-50" />
+              <p className="text-lg font-medium">All tenders assigned</p>
+              <p className="text-sm">No eligible tenders available for claiming at the moment</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 mb-4">
+                <HandMetal className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                <h2 className="text-lg font-semibold text-foreground">Claim a Tender</h2>
+              </div>
+              <p className="text-sm text-muted-foreground mb-4">
+                These eligible tenders are available for you to claim. Click "Claim" to assign it to yourself.
+              </p>
+              <div className="grid gap-4">
+                {availableTenders.map((tender) => {
+                  const deadline = tender.submissionDeadline;
+                  const deadlineStatus = getDeadlineStatus(deadline);
+                  
+                  return (
+                    <Card key={tender.id} className="hover-elevate" data-testid={`card-available-${tender.id}`}>
+                      <CardContent className="p-4">
+                        <div className="flex items-start gap-4">
+                          <div className="p-3 rounded-lg bg-blue-100 dark:bg-blue-900 shrink-0">
+                            <UserPlus className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="min-w-0">
+                                <h3 className="font-medium text-foreground truncate">
+                                  {tender.title || "Untitled Tender"}
+                                </h3>
+                                <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
+                                  <span className="flex items-center gap-1">
+                                    <Hash className="w-3 h-3" />
+                                    {tender.t247Id}
+                                  </span>
+                                  <span className="flex items-center gap-1">
+                                    <Building2 className="w-3 h-3" />
+                                    {tender.department?.slice(0, 30) || "-"}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 text-sm shrink-0">
+                                <IndianRupee className="w-4 h-4 text-muted-foreground" />
+                                <span className="font-medium">{formatLakhs(tender.estimatedValue)}</span>
+                              </div>
+                            </div>
+
+                            <div className="mt-4 flex items-center justify-between">
+                              <div className={`flex items-center gap-2 text-sm ${deadlineStatus.color}`}>
+                                <Timer className="w-4 h-4" />
+                                {deadline ? (
+                                  <>
+                                    <span>{format(new Date(deadline), "dd MMM yyyy")}</span>
+                                    <span>({deadlineStatus.label})</span>
+                                  </>
+                                ) : (
+                                  <span>No deadline set</span>
+                                )}
+                              </div>
+                              <Button
+                                onClick={() => handleClaimTender(tender)}
+                                className="gap-1"
+                                data-testid={`button-claim-${tender.id}`}
+                              >
+                                <HandMetal className="w-4 h-4" />
+                                Claim Tender
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            </div>
+          )
+        ) : myAssignments.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
             <Briefcase className="w-12 h-12 mb-4 opacity-50" />
             <p className="text-lg font-medium">No assignments yet</p>
-            <p className="text-sm">You'll see your assigned tenders here once a manager assigns them to you</p>
+            <p className="text-sm">Check the "Available to Claim" tab to find tenders you can work on</p>
           </div>
         ) : (
           <div className="space-y-6">
@@ -549,6 +684,16 @@ export default function MyWork() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AssignTenderDialog
+        tender={tenderToClaim}
+        open={claimDialogOpen}
+        onClose={() => {
+          setClaimDialogOpen(false);
+          setTenderToClaim(null);
+        }}
+        selfAssign={true}
+      />
     </div>
   );
 }

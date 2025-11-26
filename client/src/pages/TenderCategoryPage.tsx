@@ -5,6 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { TenderCard, TenderCardSkeleton } from "@/components/TenderCard";
 import { TenderDetailModal } from "@/components/TenderDetailModal";
+import { AssignTenderDialog } from "@/components/AssignTenderDialog";
+import { useAuth } from "@/hooks/useAuth";
 import { 
   Search, 
   CheckCircle,
@@ -15,7 +17,7 @@ import {
   ChevronRight,
   Clock,
 } from "lucide-react";
-import type { Tender } from "@shared/schema";
+import type { Tender, TenderAssignment, TeamMember } from "@shared/schema";
 
 interface TenderCategoryPageProps {
   status: "eligible" | "not_eligible" | "not_relevant" | "manual_review" | "missed";
@@ -57,11 +59,37 @@ export default function TenderCategoryPage({ status, title, description }: Tende
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTender, setSelectedTender] = useState<Tender | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [tenderToAssign, setTenderToAssign] = useState<Tender | null>(null);
+
+  const { user } = useAuth();
 
   const { data: tenders = [], isLoading, isFetching } = useQuery<Tender[]>({
     queryKey: ["/api/tenders/status", status],
     staleTime: 30000,
   });
+
+  const { data: currentTeamMember } = useQuery<Omit<TeamMember, "password">>({
+    queryKey: ["/api/me/team-member"],
+    retry: false,
+  });
+
+  const { data: assignments = [] } = useQuery<TenderAssignment[]>({
+    queryKey: ["/api/assignments"],
+    enabled: status === "eligible",
+  });
+
+  const assignedTenderIds = useMemo(() => {
+    return new Set(assignments.map(a => a.tenderId));
+  }, [assignments]);
+
+  const canAssign = currentTeamMember?.role === "admin" || currentTeamMember?.role === "manager";
+  const isBidder = currentTeamMember?.role === "bidder";
+
+  const handleAssignTender = (tender: Tender) => {
+    setTenderToAssign(tender);
+    setAssignDialogOpen(true);
+  };
 
   const filteredTenders = useMemo(() => {
     if (!searchQuery) return tenders;
@@ -168,6 +196,9 @@ export default function TenderCategoryPage({ status, title, description }: Tende
                       key={tender.id}
                       tender={tender}
                       onClick={() => setSelectedTender(tender)}
+                      showAssignButton={status === "eligible" && (canAssign || isBidder)}
+                      onAssign={handleAssignTender}
+                      isAssigned={assignedTenderIds.has(tender.id)}
                     />
                   ))}
                 </div>
@@ -239,6 +270,16 @@ export default function TenderCategoryPage({ status, title, description }: Tende
         tender={selectedTender}
         open={selectedTender !== null}
         onClose={() => setSelectedTender(null)}
+      />
+
+      <AssignTenderDialog
+        tender={tenderToAssign}
+        open={assignDialogOpen}
+        onClose={() => {
+          setAssignDialogOpen(false);
+          setTenderToAssign(null);
+        }}
+        selfAssign={isBidder}
       />
     </div>
   );
