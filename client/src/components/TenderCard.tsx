@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Skeleton } from "@/components/ui/skeleton";
 import { 
   Calendar, 
   IndianRupee, 
@@ -23,6 +24,66 @@ import {
   PenLine
 } from "lucide-react";
 import type { Tender } from "@shared/schema";
+
+export function TenderCardSkeleton() {
+  return (
+    <Card className="animate-pulse">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-2">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-5 w-16 rounded-md" />
+            </div>
+            <Skeleton className="h-5 w-full max-w-[280px]" />
+            <Skeleton className="h-5 w-3/4 mt-1" />
+          </div>
+          <div className="flex flex-col items-end gap-1.5 shrink-0">
+            <Skeleton className="h-6 w-16 rounded-md" />
+            <Skeleton className="h-5 w-20 rounded-md" />
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0 space-y-3">
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-4 w-4 rounded" />
+          <Skeleton className="h-4 w-48" />
+        </div>
+        
+        <div className="grid grid-cols-2 gap-3">
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-4 w-4 rounded" />
+            <div className="space-y-1">
+              <Skeleton className="h-3 w-14" />
+              <Skeleton className="h-4 w-20" />
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-4 w-4 rounded" />
+            <div className="space-y-1">
+              <Skeleton className="h-3 w-10" />
+              <Skeleton className="h-4 w-16" />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-4 w-4 rounded" />
+          <Skeleton className="h-4 w-32" />
+        </div>
+
+        <div className="flex items-center justify-between pt-2 border-t border-border">
+          <div className="flex items-center gap-1.5">
+            <Skeleton className="h-5 w-12 rounded-md" />
+            <Skeleton className="h-5 w-16 rounded-md" />
+            <Skeleton className="h-5 w-14 rounded-md" />
+          </div>
+          <Skeleton className="h-9 w-9 rounded-md" />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 interface TenderCardProps {
   tender: Tender;
@@ -67,20 +128,22 @@ const defaultStatusInfo = {
 };
 
 export function TenderCard({ tender, onClick }: TenderCardProps) {
+  const matchPct = tender.matchPercentage ?? 0;
+  
   const getMatchColor = () => {
     if (tender.isMsmeExempted || tender.isStartupExempted) {
       return "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-200 dark:border-purple-800";
     }
-    if (tender.matchPercentage >= 100) {
+    if (matchPct >= 100) {
       return "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800";
     }
-    if (tender.matchPercentage >= 75) {
+    if (matchPct >= 75) {
       return "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800";
     }
-    if (tender.matchPercentage >= 50) {
+    if (matchPct >= 50) {
       return "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800";
     }
-    if (tender.matchPercentage >= 25) {
+    if (matchPct >= 25) {
       return "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-800";
     }
     return "bg-red-500/10 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800";
@@ -90,10 +153,10 @@ export function TenderCard({ tender, onClick }: TenderCardProps) {
     if (tender.isMsmeExempted || tender.isStartupExempted) {
       return <Star className="w-3.5 h-3.5" />;
     }
-    if (tender.matchPercentage >= 75) {
+    if (matchPct >= 75) {
       return <CheckCircle2 className="w-3.5 h-3.5" />;
     }
-    if (tender.matchPercentage >= 50) {
+    if (matchPct >= 50) {
       return <TrendingUp className="w-3.5 h-3.5" />;
     }
     return <AlertCircle className="w-3.5 h-3.5" />;
@@ -178,7 +241,7 @@ export function TenderCard({ tender, onClick }: TenderCardProps) {
               {getMatchIcon()}
               {tender.isMsmeExempted || tender.isStartupExempted 
                 ? "Exempted" 
-                : `${tender.matchPercentage}%`}
+                : `${matchPct}%`}
             </Badge>
             <Badge 
               className={`flex items-center gap-1 text-xs ${statusInfo.color}`}

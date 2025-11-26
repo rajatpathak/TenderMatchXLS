@@ -1,9 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
-import { TenderCard } from "@/components/TenderCard";
+import { Button } from "@/components/ui/button";
+import { TenderCard, TenderCardSkeleton } from "@/components/TenderCard";
 import { TenderDetailModal } from "@/components/TenderDetailModal";
 import { 
   Search, 
@@ -11,6 +11,8 @@ import {
   XCircle,
   Ban,
   FileSearch,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import type { Tender } from "@shared/schema";
 
@@ -43,12 +45,16 @@ const categoryConfig = {
   },
 };
 
+const ITEMS_PER_PAGE = 30;
+
 export default function TenderCategoryPage({ status, title, description }: TenderCategoryPageProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTender, setSelectedTender] = useState<Tender | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
 
-  const { data: tenders = [], isLoading } = useQuery<Tender[]>({
+  const { data: tenders = [], isLoading, isFetching } = useQuery<Tender[]>({
     queryKey: ["/api/tenders/status", status],
+    staleTime: 30000,
   });
 
   const filteredTenders = useMemo(() => {
@@ -64,6 +70,22 @@ export default function TenderCategoryPage({ status, title, description }: Tende
       );
     });
   }, [tenders, searchQuery]);
+
+  const totalPages = Math.ceil(filteredTenders.length / ITEMS_PER_PAGE);
+  
+  const paginatedTenders = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredTenders.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredTenders, currentPage]);
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
 
   const config = categoryConfig[status];
   const Icon = config.icon;
@@ -98,14 +120,28 @@ export default function TenderCategoryPage({ status, title, description }: Tende
 
         <Card>
           <CardContent className="p-4">
-            <div className="text-sm text-muted-foreground mb-4">
-              Showing {filteredTenders.length} of {tenders.length} tenders
+            <div className="flex items-center justify-between mb-4">
+              <div className="text-sm text-muted-foreground">
+                {isLoading ? (
+                  "Loading tenders..."
+                ) : (
+                  <>
+                    Showing {paginatedTenders.length} of {filteredTenders.length} tenders
+                    {filteredTenders.length !== tenders.length && ` (filtered from ${tenders.length})`}
+                  </>
+                )}
+              </div>
+              {isFetching && !isLoading && (
+                <div className="text-xs text-muted-foreground animate-pulse">
+                  Refreshing...
+                </div>
+              )}
             </div>
             
             {isLoading ? (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {[1, 2, 3, 4, 5, 6].map((i) => (
-                  <Skeleton key={i} className="h-48" />
+                {Array.from({ length: 9 }).map((_, i) => (
+                  <TenderCardSkeleton key={i} />
                 ))}
               </div>
             ) : filteredTenders.length === 0 ? (
@@ -119,15 +155,75 @@ export default function TenderCategoryPage({ status, title, description }: Tende
                 </p>
               </div>
             ) : (
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {filteredTenders.map((tender) => (
-                  <TenderCard
-                    key={tender.id}
-                    tender={tender}
-                    onClick={() => setSelectedTender(tender)}
-                  />
-                ))}
-              </div>
+              <>
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {paginatedTenders.map((tender) => (
+                    <TenderCard
+                      key={tender.id}
+                      tender={tender}
+                      onClick={() => setSelectedTender(tender)}
+                    />
+                  ))}
+                </div>
+                
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-center gap-2 mt-6 pt-4 border-t border-border">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handlePageChange(currentPage - 1)}
+                      disabled={currentPage === 1}
+                      data-testid="button-prev-page"
+                    >
+                      <ChevronLeft className="w-4 h-4 mr-1" />
+                      Previous
+                    </Button>
+                    
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: Math.min(5, totalPages) }).map((_, i) => {
+                        let pageNum: number;
+                        if (totalPages <= 5) {
+                          pageNum = i + 1;
+                        } else if (currentPage <= 3) {
+                          pageNum = i + 1;
+                        } else if (currentPage >= totalPages - 2) {
+                          pageNum = totalPages - 4 + i;
+                        } else {
+                          pageNum = currentPage - 2 + i;
+                        }
+                        
+                        return (
+                          <Button
+                            key={pageNum}
+                            variant={currentPage === pageNum ? "default" : "outline"}
+                            size="sm"
+                            className="w-9"
+                            onClick={() => handlePageChange(pageNum)}
+                            data-testid={`button-page-${pageNum}`}
+                          >
+                            {pageNum}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                    
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handlePageChange(currentPage + 1)}
+                      disabled={currentPage === totalPages}
+                      data-testid="button-next-page"
+                    >
+                      Next
+                      <ChevronRight className="w-4 h-4 ml-1" />
+                    </Button>
+                    
+                    <span className="text-sm text-muted-foreground ml-2">
+                      Page {currentPage} of {totalPages}
+                    </span>
+                  </div>
+                )}
+              </>
             )}
           </CardContent>
         </Card>
