@@ -228,6 +228,23 @@ function checkNegativeKeywords(text: string, negativeKeywords: NegativeKeyword[]
   return null;
 }
 
+// Get ALL negative keywords that match, not just the first one
+function checkAllNegativeKeywords(text: string, negativeKeywords: NegativeKeyword[]): string[] {
+  if (!text || negativeKeywords.length === 0) return [];
+  
+  const lowerText = text.toLowerCase();
+  const matched: string[] = [];
+  
+  for (const kw of negativeKeywords) {
+    const keyword = kw.keyword.toLowerCase();
+    if (lowerText.includes(keyword)) {
+      matched.push(kw.keyword);
+    }
+  }
+  
+  return matched;
+}
+
 // Check if tender is primarily about IT/Software SERVICES (not just contains IT keywords)
 // This is stricter - looks for service-oriented terms, not just IT product mentions
 function isPrimaryITServiceTender(title: string, eligibilityText: string): boolean {
@@ -362,19 +379,27 @@ export function analyzeEligibility(
   const textLower = eligibilityText.toLowerCase();
   const titleText = tender.title || '';
   
-  // Check for negative keywords
-  const matchedNegativeKeyword = checkNegativeKeywords(eligibilityText, negativeKeywords);
+  // Check for negative keywords - get ALL matches, not just the first one
+  const allMatchedKeywords = checkAllNegativeKeywords(eligibilityText, negativeKeywords);
   
   // SMART NEGATIVE KEYWORD CHECK:
-  // Priority: If negative keyword appears in TITLE, it's likely the PRIMARY focus
+  // Priority: If ANY negative keyword appears in TITLE, it's likely the PRIMARY focus
   // Exception: If the tender is clearly about IT SERVICES (development, deployment, etc.)
-  if (matchedNegativeKeyword) {
-    const isNegativeKwInTitle = isNegativeKeywordPrimaryFocus(titleText, matchedNegativeKeyword);
+  if (allMatchedKeywords.length > 0) {
     const isITServiceTender = isPrimaryITServiceTender(titleText, eligibilityText);
     
-    // If negative keyword is in the title AND it's not primarily an IT service tender
+    // Check if ANY matched keyword appears in the title
+    let keywordInTitle: string | null = null;
+    for (const kw of allMatchedKeywords) {
+      if (isNegativeKeywordPrimaryFocus(titleText, kw)) {
+        keywordInTitle = kw;
+        break;
+      }
+    }
+    
+    // If a negative keyword is in the title AND it's not primarily an IT service tender
     // Mark as not_relevant
-    if (isNegativeKwInTitle && !isITServiceTender) {
+    if (keywordInTitle && !isITServiceTender) {
       return {
         matchPercentage: 0,
         isMsmeExempted: false,
@@ -382,14 +407,14 @@ export function analyzeEligibility(
         tags: [],
         analysisStatus: "analyzed",
         eligibilityStatus: "not_relevant",
-        notRelevantKeyword: matchedNegativeKeyword,
+        notRelevantKeyword: keywordInTitle,
         turnoverRequired: null,
         turnoverMet: false,
       };
     }
     
-    // If negative keyword is only in eligibility text (not title), 
-    // allow IT tenders to pass through but mark non-IT as not_relevant
+    // If no negative keyword is in the title, check if it's a non-IT tender
+    // If non-IT, mark as not_relevant (the negative keyword in criteria text is disqualifying)
     const hasCoreITKeywords = [
       'software', 'website', 'web portal', 'web application', 'web development',
       'mobile app', 'app development', 'application development', 'it project',
@@ -408,7 +433,7 @@ export function analyzeEligibility(
         tags: [],
         analysisStatus: "analyzed",
         eligibilityStatus: "not_relevant",
-        notRelevantKeyword: matchedNegativeKeyword,
+        notRelevantKeyword: allMatchedKeywords[0],
         turnoverRequired: null,
         turnoverMet: false,
       };
