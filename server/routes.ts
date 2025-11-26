@@ -113,18 +113,22 @@ function parseLakhToCrore(value: any): number | null {
   if (!value) return null;
   const str = String(value).toLowerCase().trim();
   
-  // Match patterns like "15000 Lakh(s)", "15000 lakh", "15000L"
-  const lakhMatch = str.match(/(\d+(?:\.\d+)?)\s*(?:lakh|lac|l(?:acs)?)/i);
+  // Match patterns like "15000 Lakh(s)", "15000 lakh", "15000 lakhs", "15000L", "15000 Lac(s)"
+  // The pattern handles: lakh, lakhs, lakh(s), lac, lacs, lac(s)
+  const lakhMatch = str.match(/(\d+(?:,\d+)*(?:\.\d+)?)\s*(?:lakh(?:s|\(s\))?|lac(?:s|\(s\))?)/i);
   if (lakhMatch) {
-    const lakhValue = parseFloat(lakhMatch[1]);
+    // Remove commas from number before parsing
+    const lakhValue = parseFloat(lakhMatch[1].replace(/,/g, ''));
     // Convert Lakh to Crore: 1 Crore = 100 Lakh
+    // Example: 15000 Lakh = 150 Crore (15000 / 100 = 150)
     return lakhValue / 100;
   }
   
-  // Try to parse as plain number (assume it's already in appropriate unit)
-  const numMatch = str.match(/(\d+(?:\.\d+)?)/);
+  // Try to parse as plain number (assume it's already in Crore or needs no conversion)
+  const numMatch = str.match(/(\d+(?:,\d+)*(?:\.\d+)?)/);
   if (numMatch) {
-    return parseFloat(numMatch[1]);
+    // Remove commas and return as-is (assumed to be in Crore already)
+    return parseFloat(numMatch[1].replace(/,/g, ''));
   }
   
   return null;
