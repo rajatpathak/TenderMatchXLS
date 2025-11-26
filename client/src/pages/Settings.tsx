@@ -39,7 +39,8 @@ import {
   Ban,
   Plus,
   X,
-  Trash2
+  Trash2,
+  RefreshCw
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -188,6 +189,31 @@ export default function Settings() {
       deleteKeywordMutation.mutate(keywordToDelete.id);
     }
   };
+
+  const reanalyzeMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("POST", "/api/tenders/reanalyze");
+    },
+    onSuccess: (data: any) => {
+      toast({
+        title: "Re-analysis Complete",
+        description: data.message || `Successfully re-analyzed ${data.updated} tenders.`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders/status", "eligible"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders/status", "not_eligible"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders/status", "not_relevant"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders/status", "manual_review"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to re-analyze tenders",
+        variant: "destructive",
+      });
+    },
+  });
 
   return (
     <div className="p-6 h-full overflow-y-auto">
@@ -461,6 +487,44 @@ export default function Settings() {
                 )}
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <RefreshCw className="w-5 h-5" />
+              Re-analyze Tenders
+            </CardTitle>
+            <CardDescription>
+              Re-run the eligibility analysis on all existing tenders using the current criteria and negative keywords.
+              This is useful after changing settings or when the matching logic has been updated.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                This will re-analyze all tenders that haven't been manually overridden. 
+                Manually overridden tenders will keep their current status.
+              </p>
+              <Button
+                onClick={() => reanalyzeMutation.mutate()}
+                disabled={reanalyzeMutation.isPending}
+                data-testid="button-reanalyze-tenders"
+              >
+                {reanalyzeMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Re-analyzing...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Re-analyze All Tenders
+                  </>
+                )}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>

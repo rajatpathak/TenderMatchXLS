@@ -424,6 +424,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Re-analyze all tenders with updated eligibility logic
+  app.post('/api/tenders/reanalyze', isAuthenticated, async (req, res) => {
+    try {
+      const criteria = await storage.getCompanyCriteria();
+      const negativeKeywords = await storage.getNegativeKeywords();
+      const allTenders = await storage.getTenders();
+      
+      let updated = 0;
+      let errors = 0;
+      
+      let skipped = 0;
+      for (const tender of allTenders) {
+        try {
+          // Skip tenders that have been manually overridden
+          if (tender.isManualOverride) {
+            skipped++;
+            continue;
+          }
+          
+          // Re-run eligibility analysis
+          const result = analyzeEligibility(
+            tender,
+            criteria,
+            negativeKeywords,
+            tender.isMsmeExempted || false,
+            tender.isStartupExempted || false,
+            tender.similarCategory || null
+          );
+          
+          // Update tender with new analysis results using existing updateTender method
+          await storage.updateTender(tender.id, {
+            matchPercentage: result.matchPercentage,
+            isMsmeExempted: result.isMsmeExempted,
+            isStartupExempted: result.isStartupExempted,
+            tags: result.tags,
+            analysisStatus: result.analysisStatus,
+            eligibilityStatus: result.eligibilityStatus,
+            notRelevantKeyword: result.notRelevantKeyword,
+            turnoverRequired: result.turnoverRequired,
+            turnoverMet: result.turnoverMet,
+          });
+          
+          updated++;
+        } catch (err) {
+          console.error(`Error re-analyzing tender ${tender.id}:`, err);
+          errors++;
+        }
+      }
+      
+      res.json({ 
+        success: true, 
+        message: `Re-analyzed ${updated} tenders (${skipped} skipped, ${errors} errors)`,
+        updated,
+        skipped,
+        errors,
+        total: allTenders.length
+      });
+    } catch (error) {
+      console.error("Error re-analyzing tenders:", error);
+      res.status(500).json({ message: "Failed to re-analyze tenders" });
+    }
+  });
+
   // Stats endpoint
   app.get('/api/stats', isAuthenticated, async (req, res) => {
     try {
