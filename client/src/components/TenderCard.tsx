@@ -21,8 +21,12 @@ import {
   Ban,
   XCircle,
   FileSearch,
-  PenLine
+  PenLine,
+  ThumbsDown
 } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import type { Tender } from "@shared/schema";
 
 export function TenderCardSkeleton() {
@@ -88,6 +92,7 @@ export function TenderCardSkeleton() {
 interface TenderCardProps {
   tender: Tender;
   onClick: () => void;
+  showQuickActions?: boolean;
 }
 
 const tagIcons: Record<string, React.ElementType> = {
@@ -127,8 +132,36 @@ const defaultStatusInfo = {
   label: "Unknown"
 };
 
-export function TenderCard({ tender, onClick }: TenderCardProps) {
+export function TenderCard({ tender, onClick, showQuickActions = true }: TenderCardProps) {
+  const { toast } = useToast();
   const matchPct = tender.matchPercentage ?? 0;
+
+  // Quick override mutation
+  const overrideMutation = useMutation({
+    mutationFn: async ({ status, reason }: { status: string; reason: string }) => {
+      return apiRequest("POST", `/api/tenders/${tender.id}/override`, {
+        overrideStatus: status,
+        overrideReason: reason,
+        overrideComment: `Quick action: marked as ${status === 'not_eligible' ? 'Not Eligible' : 'Not Relevant'}`
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders/status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+      toast({
+        title: "Status Updated",
+        description: "Tender status has been updated successfully.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update tender status.",
+        variant: "destructive",
+      });
+    },
+  });
   
   const getMatchColor = () => {
     if (tender.isMsmeExempted || tender.isStartupExempted) {
@@ -340,6 +373,60 @@ export function TenderCard({ tender, onClick }: TenderCardProps) {
             <Eye className="w-4 h-4" />
           </Button>
         </div>
+
+        {/* Quick Action Buttons */}
+        {showQuickActions && effectiveStatus !== 'not_eligible' && effectiveStatus !== 'not_relevant' && (
+          <div className="flex items-center gap-2 pt-2 border-t border-border">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1 text-xs bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800"
+                  disabled={overrideMutation.isPending}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    overrideMutation.mutate({ 
+                      status: 'not_eligible', 
+                      reason: 'Manually marked as Not Eligible' 
+                    });
+                  }}
+                  data-testid={`button-quick-not-eligible-${tender.id}`}
+                >
+                  <XCircle className="w-3.5 h-3.5 mr-1" />
+                  Not Eligible
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Mark as Not Eligible (requirements not met)</p>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1 text-xs bg-gray-500/10 hover:bg-gray-500/20 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-800"
+                  disabled={overrideMutation.isPending}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    overrideMutation.mutate({ 
+                      status: 'not_relevant', 
+                      reason: 'Manually marked as Not Relevant' 
+                    });
+                  }}
+                  data-testid={`button-quick-not-relevant-${tender.id}`}
+                >
+                  <Ban className="w-3.5 h-3.5 mr-1" />
+                  Not Relevant
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Mark as Not Relevant (not applicable to business)</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
