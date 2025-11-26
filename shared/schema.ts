@@ -257,3 +257,169 @@ export const tenderDocumentsRelations = relations(tenderDocuments, ({ one }) => 
     references: [tenders.id],
   }),
 }));
+
+// ===============================
+// TEAM MANAGEMENT & BIDDING WORKFLOW
+// ===============================
+
+// User roles enum
+export const userRoles = ['admin', 'manager', 'bidder'] as const;
+export type UserRole = typeof userRoles[number];
+
+// Team members table (internal users for tender management)
+export const teamMembers = pgTable("team_members", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  username: varchar("username").notNull().unique(),
+  password: varchar("password").notNull(),
+  email: varchar("email").unique(),
+  fullName: varchar("full_name").notNull(),
+  role: varchar("role").notNull().default("bidder"), // 'admin', 'manager', 'bidder'
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: integer("created_by"),
+  lastLoginAt: timestamp("last_login_at"),
+});
+
+export const insertTeamMemberSchema = createInsertSchema(teamMembers).omit({
+  id: true,
+  createdAt: true,
+  lastLoginAt: true,
+});
+export type InsertTeamMember = z.infer<typeof insertTeamMemberSchema>;
+export type TeamMember = typeof teamMembers.$inferSelect;
+
+// Bidding workflow stages
+export const biddingStages = ['assigned', 'in_progress', 'ready_for_review', 'submitted'] as const;
+export type BiddingStage = typeof biddingStages[number];
+
+// Tender assignments table
+export const tenderAssignments = pgTable("tender_assignments", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  tenderId: integer("tender_id").references(() => tenders.id).notNull(),
+  assignedTo: integer("assigned_to").references(() => teamMembers.id).notNull(),
+  assignedBy: integer("assigned_by").references(() => teamMembers.id).notNull(),
+  assignedAt: timestamp("assigned_at").defaultNow(),
+  
+  // Current workflow stage
+  currentStage: varchar("current_stage").default("assigned"), // 'assigned', 'in_progress', 'ready_for_review', 'submitted'
+  stageUpdatedAt: timestamp("stage_updated_at").defaultNow(),
+  
+  // Notes and priority
+  priority: varchar("priority").default("normal"), // 'low', 'normal', 'high', 'urgent'
+  notes: text("notes"),
+  
+  isActive: boolean("is_active").default(true),
+});
+
+export const insertTenderAssignmentSchema = createInsertSchema(tenderAssignments).omit({
+  id: true,
+  assignedAt: true,
+  stageUpdatedAt: true,
+});
+export type InsertTenderAssignment = z.infer<typeof insertTenderAssignmentSchema>;
+export type TenderAssignment = typeof tenderAssignments.$inferSelect;
+
+// Bidding submissions table (when tender is submitted to portal)
+export const biddingSubmissions = pgTable("bidding_submissions", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  tenderId: integer("tender_id").references(() => tenders.id).notNull(),
+  assignmentId: integer("assignment_id").references(() => tenderAssignments.id).notNull(),
+  submittedBy: integer("submitted_by").references(() => teamMembers.id).notNull(),
+  
+  // Submission details
+  submittedBudget: decimal("submitted_budget", { precision: 15, scale: 2 }).notNull(),
+  submissionDate: timestamp("submission_date").notNull(),
+  portalReferenceNumber: varchar("portal_reference_number"),
+  
+  // Additional info
+  notes: text("notes"),
+  attachments: text("attachments").array().default(sql`ARRAY[]::text[]`),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertBiddingSubmissionSchema = createInsertSchema(biddingSubmissions).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertBiddingSubmission = z.infer<typeof insertBiddingSubmissionSchema>;
+export type BiddingSubmission = typeof biddingSubmissions.$inferSelect;
+
+// Workflow status history for audit trail
+export const workflowHistory = pgTable("workflow_history", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  assignmentId: integer("assignment_id").references(() => tenderAssignments.id).notNull(),
+  fromStage: varchar("from_stage"),
+  toStage: varchar("to_stage").notNull(),
+  changedBy: integer("changed_by").references(() => teamMembers.id).notNull(),
+  note: text("note"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertWorkflowHistorySchema = createInsertSchema(workflowHistory).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertWorkflowHistory = z.infer<typeof insertWorkflowHistorySchema>;
+export type WorkflowHistory = typeof workflowHistory.$inferSelect;
+
+// Relations for team management
+export const teamMembersRelations = relations(teamMembers, ({ many }) => ({
+  assignedTenders: many(tenderAssignments, { relationName: "assignee" }),
+  createdAssignments: many(tenderAssignments, { relationName: "assigner" }),
+  submissions: many(biddingSubmissions),
+}));
+
+export const tenderAssignmentsRelations = relations(tenderAssignments, ({ one, many }) => ({
+  tender: one(tenders, {
+    fields: [tenderAssignments.tenderId],
+    references: [tenders.id],
+  }),
+  assignee: one(teamMembers, {
+    fields: [tenderAssignments.assignedTo],
+    references: [teamMembers.id],
+    relationName: "assignee",
+  }),
+  assigner: one(teamMembers, {
+    fields: [tenderAssignments.assignedBy],
+    references: [teamMembers.id],
+    relationName: "assigner",
+  }),
+  submission: many(biddingSubmissions),
+  history: many(workflowHistory),
+}));
+
+export const biddingSubmissionsRelations = relations(biddingSubmissions, ({ one }) => ({
+  tender: one(tenders, {
+    fields: [biddingSubmissions.tenderId],
+    references: [tenders.id],
+  }),
+  assignment: one(tenderAssignments, {
+    fields: [biddingSubmissions.assignmentId],
+    references: [tenderAssignments.id],
+  }),
+  submitter: one(teamMembers, {
+    fields: [biddingSubmissions.submittedBy],
+    references: [teamMembers.id],
+  }),
+}));
+
+export const workflowHistoryRelations = relations(workflowHistory, ({ one }) => ({
+  assignment: one(tenderAssignments, {
+    fields: [workflowHistory.assignmentId],
+    references: [tenderAssignments.id],
+  }),
+  changedByUser: one(teamMembers, {
+    fields: [workflowHistory.changedBy],
+    references: [teamMembers.id],
+  }),
+}));
+
+// Extended tender type with assignment info
+export type TenderWithAssignment = Tender & {
+  assignment?: TenderAssignment & {
+    assignee?: TeamMember;
+    assigner?: TeamMember;
+  };
+  submission?: BiddingSubmission;
+};

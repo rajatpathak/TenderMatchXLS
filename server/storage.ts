@@ -6,6 +6,10 @@ import {
   corrigendumChanges,
   tenderDocuments,
   negativeKeywords,
+  teamMembers,
+  tenderAssignments,
+  biddingSubmissions,
+  workflowHistory,
   type User,
   type UpsertUser,
   type Tender,
@@ -20,6 +24,14 @@ import {
   type InsertTenderDocument,
   type NegativeKeyword,
   type InsertNegativeKeyword,
+  type TeamMember,
+  type InsertTeamMember,
+  type TenderAssignment,
+  type InsertTenderAssignment,
+  type BiddingSubmission,
+  type InsertBiddingSubmission,
+  type WorkflowHistory,
+  type InsertWorkflowHistory,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, sql } from "drizzle-orm";
@@ -87,6 +99,41 @@ export interface IStorage {
   // Data management
   deleteAllData(): Promise<void>;
   cleanupDuplicateTenders(): Promise<{ duplicatesRemoved: number; tenderIdsAffected: string[] }>;
+  
+  // Team member operations
+  getTeamMembers(): Promise<TeamMember[]>;
+  getTeamMemberById(id: number): Promise<TeamMember | undefined>;
+  getTeamMemberByUsername(username: string): Promise<TeamMember | undefined>;
+  createTeamMember(member: InsertTeamMember): Promise<TeamMember>;
+  updateTeamMember(id: number, member: Partial<InsertTeamMember>): Promise<TeamMember | undefined>;
+  deleteTeamMember(id: number): Promise<void>;
+  updateTeamMemberLastLogin(id: number): Promise<void>;
+  
+  // Tender assignment operations
+  getTenderAssignments(): Promise<(TenderAssignment & { tender?: Tender; assignee?: TeamMember; assigner?: TeamMember })[]>;
+  getAssignmentByTenderId(tenderId: number): Promise<TenderAssignment | undefined>;
+  getAssignmentsByUserId(userId: number): Promise<(TenderAssignment & { tender?: Tender })[]>;
+  createTenderAssignment(assignment: InsertTenderAssignment): Promise<TenderAssignment>;
+  updateTenderAssignment(id: number, assignment: Partial<InsertTenderAssignment>): Promise<TenderAssignment | undefined>;
+  updateAssignmentStage(id: number, stage: string, changedBy: number, note?: string): Promise<TenderAssignment | undefined>;
+  deleteTenderAssignment(id: number): Promise<void>;
+  
+  // Bidding submission operations
+  getBiddingSubmissions(): Promise<(BiddingSubmission & { tender?: Tender; assignment?: TenderAssignment; submitter?: TeamMember })[]>;
+  createBiddingSubmission(submission: InsertBiddingSubmission): Promise<BiddingSubmission>;
+  
+  // Workflow history operations
+  getWorkflowHistory(assignmentId: number): Promise<WorkflowHistory[]>;
+  createWorkflowHistory(history: InsertWorkflowHistory): Promise<WorkflowHistory>;
+  
+  // Workflow stats
+  getWorkflowStats(): Promise<{ 
+    assigned: number; 
+    inProgress: number; 
+    readyForReview: number; 
+    submitted: number;
+    totalBudget: number;
+  }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -529,6 +576,224 @@ export class DatabaseStorage implements IStorage {
     }
     
     return { duplicatesRemoved, tenderIdsAffected };
+  }
+
+  // Team member operations
+  async getTeamMembers(): Promise<TeamMember[]> {
+    return db.select().from(teamMembers).orderBy(desc(teamMembers.createdAt));
+  }
+
+  async getTeamMemberById(id: number): Promise<TeamMember | undefined> {
+    const [member] = await db.select().from(teamMembers).where(eq(teamMembers.id, id));
+    return member;
+  }
+
+  async getTeamMemberByUsername(username: string): Promise<TeamMember | undefined> {
+    const [member] = await db.select().from(teamMembers).where(eq(teamMembers.username, username));
+    return member;
+  }
+
+  async createTeamMember(member: InsertTeamMember): Promise<TeamMember> {
+    const [created] = await db.insert(teamMembers).values(member).returning();
+    return created;
+  }
+
+  async updateTeamMember(id: number, member: Partial<InsertTeamMember>): Promise<TeamMember | undefined> {
+    const [updated] = await db
+      .update(teamMembers)
+      .set(member)
+      .where(eq(teamMembers.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteTeamMember(id: number): Promise<void> {
+    await db.delete(teamMembers).where(eq(teamMembers.id, id));
+  }
+
+  async updateTeamMemberLastLogin(id: number): Promise<void> {
+    await db
+      .update(teamMembers)
+      .set({ lastLoginAt: new Date() })
+      .where(eq(teamMembers.id, id));
+  }
+
+  // Tender assignment operations
+  async getTenderAssignments(): Promise<(TenderAssignment & { tender?: Tender; assignee?: TeamMember; assigner?: TeamMember })[]> {
+    const assignments = await db
+      .select()
+      .from(tenderAssignments)
+      .where(eq(tenderAssignments.isActive, true))
+      .orderBy(desc(tenderAssignments.assignedAt));
+    
+    const result = await Promise.all(
+      assignments.map(async (assignment) => {
+        const [tender] = await db.select().from(tenders).where(eq(tenders.id, assignment.tenderId));
+        const [assignee] = await db.select().from(teamMembers).where(eq(teamMembers.id, assignment.assignedTo));
+        const [assigner] = await db.select().from(teamMembers).where(eq(teamMembers.id, assignment.assignedBy));
+        return { ...assignment, tender, assignee, assigner };
+      })
+    );
+    
+    return result;
+  }
+
+  async getAssignmentByTenderId(tenderId: number): Promise<TenderAssignment | undefined> {
+    const [assignment] = await db
+      .select()
+      .from(tenderAssignments)
+      .where(and(eq(tenderAssignments.tenderId, tenderId), eq(tenderAssignments.isActive, true)));
+    return assignment;
+  }
+
+  async getAssignmentsByUserId(userId: number): Promise<(TenderAssignment & { tender?: Tender })[]> {
+    const assignments = await db
+      .select()
+      .from(tenderAssignments)
+      .where(and(eq(tenderAssignments.assignedTo, userId), eq(tenderAssignments.isActive, true)))
+      .orderBy(desc(tenderAssignments.assignedAt));
+    
+    const result = await Promise.all(
+      assignments.map(async (assignment) => {
+        const [tender] = await db.select().from(tenders).where(eq(tenders.id, assignment.tenderId));
+        return { ...assignment, tender };
+      })
+    );
+    
+    return result;
+  }
+
+  async createTenderAssignment(assignment: InsertTenderAssignment): Promise<TenderAssignment> {
+    // Deactivate any existing assignment for this tender
+    await db
+      .update(tenderAssignments)
+      .set({ isActive: false })
+      .where(eq(tenderAssignments.tenderId, assignment.tenderId));
+    
+    const [created] = await db.insert(tenderAssignments).values(assignment).returning();
+    return created;
+  }
+
+  async updateTenderAssignment(id: number, assignment: Partial<InsertTenderAssignment>): Promise<TenderAssignment | undefined> {
+    const [updated] = await db
+      .update(tenderAssignments)
+      .set(assignment)
+      .where(eq(tenderAssignments.id, id))
+      .returning();
+    return updated;
+  }
+
+  async updateAssignmentStage(id: number, stage: string, changedBy: number, note?: string): Promise<TenderAssignment | undefined> {
+    const [assignment] = await db.select().from(tenderAssignments).where(eq(tenderAssignments.id, id));
+    if (!assignment) return undefined;
+    
+    // Record history
+    await db.insert(workflowHistory).values({
+      assignmentId: id,
+      fromStage: assignment.currentStage,
+      toStage: stage,
+      changedBy,
+      note,
+    });
+    
+    // Update assignment
+    const [updated] = await db
+      .update(tenderAssignments)
+      .set({ currentStage: stage, stageUpdatedAt: new Date() })
+      .where(eq(tenderAssignments.id, id))
+      .returning();
+    
+    return updated;
+  }
+
+  async deleteTenderAssignment(id: number): Promise<void> {
+    await db.update(tenderAssignments).set({ isActive: false }).where(eq(tenderAssignments.id, id));
+  }
+
+  // Bidding submission operations
+  async getBiddingSubmissions(): Promise<(BiddingSubmission & { tender?: Tender; assignment?: TenderAssignment; submitter?: TeamMember })[]> {
+    const submissions = await db
+      .select()
+      .from(biddingSubmissions)
+      .orderBy(desc(biddingSubmissions.submissionDate));
+    
+    const result = await Promise.all(
+      submissions.map(async (submission) => {
+        const [tender] = await db.select().from(tenders).where(eq(tenders.id, submission.tenderId));
+        const [assignment] = await db.select().from(tenderAssignments).where(eq(tenderAssignments.id, submission.assignmentId));
+        const [submitter] = await db.select().from(teamMembers).where(eq(teamMembers.id, submission.submittedBy));
+        return { ...submission, tender, assignment, submitter };
+      })
+    );
+    
+    return result;
+  }
+
+  async createBiddingSubmission(submission: InsertBiddingSubmission): Promise<BiddingSubmission> {
+    const [created] = await db.insert(biddingSubmissions).values(submission).returning();
+    
+    // Update the assignment stage to 'submitted'
+    await db
+      .update(tenderAssignments)
+      .set({ currentStage: 'submitted', stageUpdatedAt: new Date() })
+      .where(eq(tenderAssignments.id, submission.assignmentId));
+    
+    return created;
+  }
+
+  // Workflow history operations
+  async getWorkflowHistory(assignmentId: number): Promise<WorkflowHistory[]> {
+    return db
+      .select()
+      .from(workflowHistory)
+      .where(eq(workflowHistory.assignmentId, assignmentId))
+      .orderBy(desc(workflowHistory.createdAt));
+  }
+
+  async createWorkflowHistory(history: InsertWorkflowHistory): Promise<WorkflowHistory> {
+    const [created] = await db.insert(workflowHistory).values(history).returning();
+    return created;
+  }
+
+  // Workflow stats
+  async getWorkflowStats(): Promise<{ 
+    assigned: number; 
+    inProgress: number; 
+    readyForReview: number; 
+    submitted: number;
+    totalBudget: number;
+  }> {
+    const [assignedResult] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(tenderAssignments)
+      .where(and(eq(tenderAssignments.isActive, true), eq(tenderAssignments.currentStage, 'assigned')));
+    
+    const [inProgressResult] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(tenderAssignments)
+      .where(and(eq(tenderAssignments.isActive, true), eq(tenderAssignments.currentStage, 'in_progress')));
+    
+    const [readyForReviewResult] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(tenderAssignments)
+      .where(and(eq(tenderAssignments.isActive, true), eq(tenderAssignments.currentStage, 'ready_for_review')));
+    
+    const [submittedResult] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(tenderAssignments)
+      .where(and(eq(tenderAssignments.isActive, true), eq(tenderAssignments.currentStage, 'submitted')));
+    
+    const [budgetResult] = await db
+      .select({ total: sql<number>`COALESCE(SUM(submitted_budget), 0)` })
+      .from(biddingSubmissions);
+    
+    return {
+      assigned: Number(assignedResult?.count || 0),
+      inProgress: Number(inProgressResult?.count || 0),
+      readyForReview: Number(readyForReviewResult?.count || 0),
+      submitted: Number(submittedResult?.count || 0),
+      totalBudget: Number(budgetResult?.total || 0),
+    };
   }
 }
 
