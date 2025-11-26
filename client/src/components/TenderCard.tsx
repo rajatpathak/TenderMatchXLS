@@ -1,0 +1,204 @@
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { 
+  Calendar, 
+  IndianRupee, 
+  Building2, 
+  Star,
+  Eye,
+  FileText,
+  AlertCircle,
+  CheckCircle2,
+  Users,
+  Code,
+  Globe,
+  Smartphone,
+  Monitor,
+  TrendingUp
+} from "lucide-react";
+import type { Tender } from "@shared/schema";
+
+interface TenderCardProps {
+  tender: Tender;
+  onClick: () => void;
+}
+
+const tagIcons: Record<string, React.ElementType> = {
+  'Manpower': Users,
+  'IT': Monitor,
+  'Software': Code,
+  'Website': Globe,
+  'Mobile': Smartphone,
+};
+
+export function TenderCard({ tender, onClick }: TenderCardProps) {
+  const getMatchColor = () => {
+    if (tender.isMsmeExempted || tender.isStartupExempted) {
+      return "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-200 dark:border-purple-800";
+    }
+    if (tender.matchPercentage >= 100) {
+      return "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800";
+    }
+    if (tender.matchPercentage >= 75) {
+      return "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800";
+    }
+    if (tender.matchPercentage >= 50) {
+      return "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800";
+    }
+    if (tender.matchPercentage >= 25) {
+      return "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-800";
+    }
+    return "bg-red-500/10 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800";
+  };
+
+  const getMatchIcon = () => {
+    if (tender.isMsmeExempted || tender.isStartupExempted) {
+      return <Star className="w-3.5 h-3.5" />;
+    }
+    if (tender.matchPercentage >= 75) {
+      return <CheckCircle2 className="w-3.5 h-3.5" />;
+    }
+    if (tender.matchPercentage >= 50) {
+      return <TrendingUp className="w-3.5 h-3.5" />;
+    }
+    return <AlertCircle className="w-3.5 h-3.5" />;
+  };
+
+  const formatCurrency = (value: string | number | null | undefined) => {
+    if (!value) return "—";
+    const num = typeof value === 'string' ? parseFloat(value) : value;
+    if (num >= 10000000) {
+      return `${(num / 10000000).toFixed(2)} Cr`;
+    }
+    if (num >= 100000) {
+      return `${(num / 100000).toFixed(2)} L`;
+    }
+    return `${num.toLocaleString('en-IN')}`;
+  };
+
+  const formatDate = (date: Date | string | null | undefined) => {
+    if (!date) return "—";
+    return new Date(date).toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    });
+  };
+
+  return (
+    <Card 
+      className="hover-elevate cursor-pointer transition-shadow"
+      onClick={onClick}
+      data-testid={`card-tender-${tender.id}`}
+    >
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="font-mono text-xs text-muted-foreground">
+                {tender.t247Id}
+              </span>
+              {tender.isCorrigendum && (
+                <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800">
+                  Corrigendum
+                </Badge>
+              )}
+            </div>
+            <h3 className="font-semibold text-foreground line-clamp-2 text-sm leading-snug">
+              {tender.title || "Untitled Tender"}
+            </h3>
+          </div>
+          <Badge 
+            className={`shrink-0 flex items-center gap-1 ${getMatchColor()}`}
+            variant="outline"
+          >
+            {getMatchIcon()}
+            {tender.isMsmeExempted || tender.isStartupExempted 
+              ? "Exempted" 
+              : `${tender.matchPercentage}%`}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0 space-y-3">
+        {tender.department && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Building2 className="w-4 h-4 shrink-0" />
+            <span className="truncate">{tender.department}</span>
+          </div>
+        )}
+        
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <div className="flex items-center gap-2">
+            <IndianRupee className="w-4 h-4 text-muted-foreground shrink-0" />
+            <div>
+              <div className="text-xs text-muted-foreground">Est. Value</div>
+              <div className="font-medium text-foreground">{formatCurrency(tender.estimatedValue)}</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
+            <div>
+              <div className="text-xs text-muted-foreground">EMD</div>
+              <div className="font-medium text-foreground">{formatCurrency(tender.emdAmount)}</div>
+            </div>
+          </div>
+        </div>
+
+        {tender.submissionDeadline && (
+          <div className="flex items-center gap-2 text-sm">
+            <Calendar className="w-4 h-4 text-muted-foreground shrink-0" />
+            <div>
+              <span className="text-muted-foreground">Deadline: </span>
+              <span className="font-medium text-foreground">{formatDate(tender.submissionDeadline)}</span>
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between pt-2 border-t border-border">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <Badge 
+              variant="outline" 
+              className={tender.tenderType === 'gem' 
+                ? "text-xs bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800" 
+                : "text-xs bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700"
+              }
+            >
+              {tender.tenderType === 'gem' ? 'GEM' : 'Non-GEM'}
+            </Badge>
+            {tender.tags?.slice(0, 2).map((tag, index) => {
+              const IconComponent = tagIcons[tag] || Code;
+              return (
+                <Badge 
+                  key={index} 
+                  variant="outline" 
+                  className="text-xs flex items-center gap-1"
+                >
+                  <IconComponent className="w-3 h-3" />
+                  {tag}
+                </Badge>
+              );
+            })}
+            {(tender.tags?.length || 0) > 2 && (
+              <Badge variant="outline" className="text-xs">
+                +{(tender.tags?.length || 0) - 2}
+              </Badge>
+            )}
+          </div>
+          <Button 
+            size="icon" 
+            variant="ghost" 
+            className="shrink-0"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClick();
+            }}
+            data-testid={`button-view-tender-${tender.id}`}
+          >
+            <Eye className="w-4 h-4" />
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
