@@ -30,16 +30,24 @@ TenderMatch is a web application for analyzing government tender eligibility. It
 
 ## Key Features
 1. **Excel Upload**: Upload tender Excel files with Gem/Non-Gem sheets
-2. **Tender Categorization**: Automatic categorization into 4 categories:
-   - **Eligible**: Matches company criteria
-   - **Not Relevant**: Contains negative keywords
-   - **Not Eligible**: Doesn't meet eligibility requirements
+2. **Smart Tender Categorization**: Automatic categorization into 4 categories:
+   - **Eligible**: Matches company criteria (project types + turnover)
+   - **Not Relevant**: Contains negative keywords (only for non-IT tenders)
+   - **Not Eligible**: Doesn't meet turnover requirements
    - **Manual Review**: Requires PDF upload for analysis
-3. **Negative Keywords**: Filter irrelevant tenders automatically
+3. **Intelligent Negative Keywords**: IT/Software tenders override negative keywords
 4. **Manual Override**: Override automatic categorization with reason and comment
 5. **MSME/Startup Exemptions**: Automatic detection of turnover exemptions
 6. **Corrigendum Tracking**: Detect duplicate T247 IDs and track changes
 7. **PDF Analysis**: Upload PDFs for tenders with unclear eligibility
+8. **Project Type Filtering**: Filter dashboard by detected tags
+
+## Eligibility Matching Logic
+1. Core service detection checks if tender matches IT/Software services
+2. Smart negative keywords only apply to non-IT tenders
+3. Turnover comparison: Company (400 Lakhs) vs required turnover
+4. MSME/Startup exemptions waive turnover requirements
+5. All values stored and compared in Lakhs for accuracy
 
 ## Database Tables
 - `users` - User accounts
@@ -80,7 +88,7 @@ TenderMatch is a web application for analyzing government tender eligibility. It
 The application starts with `npm run dev` which runs both the Express backend and Vite frontend.
 
 ## Company Criteria (Default)
-- Turnover: 4 Crore
+- Turnover: 400 Lakhs (4 Crore)
 - Project Types: Software, Website, Mobile, IT Projects, Manpower Deployment
 
 ## Excel Format
