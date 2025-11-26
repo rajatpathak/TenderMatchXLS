@@ -166,6 +166,182 @@ function parseTenderFromRow(row: any, tenderType: 'gem' | 'non_gem', sheet?: XLS
   };
 }
 
+// Store for upload progress tracking
+const uploadProgressStore = new Map<number, {
+  gemCount: number;
+  nonGemCount: number;
+  failedCount: number;
+  totalRows: number;
+  currentSheet: string;
+  processedRows: number;
+  startTime: number;
+  status: 'processing' | 'complete' | 'error';
+  message?: string;
+  clients: Set<any>;
+}>();
+
+function sendProgressUpdate(uploadId: number) {
+  const progress = uploadProgressStore.get(uploadId);
+  if (!progress) return;
+
+  const elapsed = (Date.now() - progress.startTime) / 1000;
+  const rowsPerSecond = progress.processedRows / Math.max(elapsed, 0.1);
+  const remainingRows = progress.totalRows - progress.processedRows;
+  const estimatedTimeRemaining = remainingRows / Math.max(rowsPerSecond, 0.1);
+
+  const data = {
+    type: progress.status,
+    gemCount: progress.gemCount,
+    nonGemCount: progress.nonGemCount,
+    failedCount: progress.failedCount,
+    totalRows: progress.totalRows,
+    currentSheet: progress.currentSheet,
+    processedRows: progress.processedRows,
+    estimatedTimeRemaining: Math.max(0, estimatedTimeRemaining),
+    message: progress.message,
+  };
+
+  const message = `data: ${JSON.stringify(data)}\n\n`;
+  progress.clients.forEach(client => {
+    try {
+      client.write(message);
+    } catch (e) {
+      // Client disconnected
+    }
+  });
+}
+
+async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, userId: string) {
+  const progress = uploadProgressStore.get(uploadId);
+  if (!progress) return;
+
+  try {
+    // Get company criteria for matching
+    let criteria = await storage.getCompanyCriteria();
+    if (!criteria) {
+      criteria = await storage.upsertCompanyCriteria({
+        turnoverCr: "4",
+        projectTypes: ['Software', 'Website', 'Mobile', 'IT Projects', 'Manpower Deployment'],
+        updatedBy: userId,
+      });
+    }
+
+    let gemCount = 0;
+    let nonGemCount = 0;
+    let failedCount = 0;
+
+    // Process all sheets
+    for (const sheetName of workbook.SheetNames) {
+      const normalizedName = sheetName.toLowerCase().replace(/[-_\s]/g, '');
+      
+      // Determine tender type from sheet name
+      let tenderType: 'gem' | 'non_gem' = 'non_gem';
+      if (normalizedName.includes('gem') && !normalizedName.includes('nongem') && !normalizedName.includes('non')) {
+        tenderType = 'gem';
+      }
+      
+      progress.currentSheet = sheetName;
+      sendProgressUpdate(uploadId);
+      
+      const sheet = workbook.Sheets[sheetName];
+      const data = XLSX.utils.sheet_to_json(sheet);
+      
+      for (let i = 0; i < data.length; i++) {
+        try {
+          const row = data[i];
+          const excelRowIndex = i + 2;
+          const tenderData = parseTenderFromRow(row, tenderType, sheet, excelRowIndex);
+          
+          // Check for duplicate T247 ID (corrigendum detection)
+          const existingTender = await storage.getTenderByT247Id(tenderData.t247Id!);
+          
+          // Use Excel exemption flags if available
+          const excelMsme = tenderData.excelMsmeExemption;
+          const excelStartup = tenderData.excelStartupExemption;
+          
+          // Analyze eligibility
+          const matchResult = analyzeEligibility(tenderData, criteria!, excelMsme, excelStartup);
+          
+          // Remove temporary Excel fields before inserting
+          const { excelMsmeExemption, excelStartupExemption, ...tenderInsertData } = tenderData;
+          
+          const fullTenderData: InsertTender = {
+            ...tenderInsertData,
+            uploadId,
+            matchPercentage: matchResult.matchPercentage,
+            isMsmeExempted: matchResult.isMsmeExempted,
+            isStartupExempted: matchResult.isStartupExempted,
+            tags: matchResult.tags,
+            analysisStatus: matchResult.analysisStatus,
+            isCorrigendum: !!existingTender,
+            originalTenderId: existingTender?.id || null,
+          };
+          
+          const createdTender = await storage.createTender(fullTenderData);
+          
+          // If this is a corrigendum, detect and save changes
+          if (existingTender) {
+            const changes = detectCorrigendumChanges(existingTender, createdTender);
+            for (const change of changes) {
+              await storage.createCorrigendumChange({
+                tenderId: createdTender.id,
+                originalTenderId: existingTender.id,
+                fieldName: change.fieldName,
+                oldValue: change.oldValue,
+                newValue: change.newValue,
+              });
+            }
+          }
+          
+          if (tenderType === 'gem') {
+            gemCount++;
+            progress.gemCount = gemCount;
+          } else {
+            nonGemCount++;
+            progress.nonGemCount = nonGemCount;
+          }
+        } catch (err) {
+          console.error('Error processing row:', err);
+          failedCount++;
+          progress.failedCount = failedCount;
+        }
+        
+        progress.processedRows++;
+        
+        // Send update every 5 rows or on every row if less than 20 total
+        if (progress.processedRows % 5 === 0 || progress.totalRows < 20) {
+          sendProgressUpdate(uploadId);
+        }
+      }
+    }
+
+    // Update upload record with counts
+    await storage.updateExcelUpload(uploadId, {
+      totalTenders: gemCount + nonGemCount,
+      gemCount,
+      nonGemCount,
+    });
+
+    // Mark as complete
+    progress.status = 'complete';
+    progress.gemCount = gemCount;
+    progress.nonGemCount = nonGemCount;
+    progress.failedCount = failedCount;
+    sendProgressUpdate(uploadId);
+
+    // Clean up after a delay
+    setTimeout(() => {
+      uploadProgressStore.delete(uploadId);
+    }, 60000);
+
+  } catch (error: any) {
+    console.error('Error processing Excel:', error);
+    progress.status = 'error';
+    progress.message = error.message || 'Processing failed';
+    sendProgressUpdate(uploadId);
+  }
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Setup auth
   await setupAuth(app);
@@ -242,6 +418,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching tender:", error);
       res.status(500).json({ message: "Failed to fetch tender" });
+    }
+  });
+
+  // SSE endpoint for upload progress
+  app.get('/api/upload-progress/:uploadId', isAuthenticated, (req, res) => {
+    const uploadId = parseInt(req.params.uploadId);
+    
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const progress = uploadProgressStore.get(uploadId);
+    if (progress) {
+      progress.clients.add(res);
+      sendProgressUpdate(uploadId);
+      
+      req.on('close', () => {
+        progress.clients.delete(res);
+      });
+    } else {
+      res.write(`data: ${JSON.stringify({ type: 'error', message: 'Upload not found' })}\n\n`);
+      res.end();
+    }
+  });
+
+  // Excel upload with progress endpoint
+  app.post('/api/upload-with-progress', isAuthenticated, upload.single('file'), async (req: any, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      const userId = req.user.claims.sub;
+      const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+      
+      // Count total rows across all sheets
+      let totalRows = 0;
+      for (const sheetName of workbook.SheetNames) {
+        const sheet = workbook.Sheets[sheetName];
+        const data = XLSX.utils.sheet_to_json(sheet);
+        totalRows += data.length;
+      }
+
+      // Create upload record
+      const uploadRecord = await storage.createExcelUpload({
+        fileName: req.file.originalname,
+        uploadedBy: userId,
+        totalTenders: 0,
+        gemCount: 0,
+        nonGemCount: 0,
+      });
+
+      // Initialize progress tracking
+      uploadProgressStore.set(uploadRecord.id, {
+        gemCount: 0,
+        nonGemCount: 0,
+        failedCount: 0,
+        totalRows,
+        currentSheet: '',
+        processedRows: 0,
+        startTime: Date.now(),
+        status: 'processing',
+        clients: new Set(),
+      });
+
+      // Return immediately with upload ID so client can connect to SSE
+      res.json({ uploadId: uploadRecord.id });
+
+      // Process in background
+      processExcelAsync(workbook, uploadRecord.id, userId);
+
+    } catch (error) {
+      console.error("Error starting upload:", error);
+      res.status(500).json({ message: "Failed to start upload" });
     }
   });
 
