@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Search } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -101,6 +102,7 @@ export default function AssignmentsHub() {
   const [assigneeFilter, setAssigneeFilter] = useState("all");
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [tenderToAssign, setTenderToAssign] = useState<Tender | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const { data: assignments = [], isLoading, refetch } = useQuery<AssignmentWithDetails[]>({
     queryKey: ["/api/assignments", activeTab, priorityFilter, assigneeFilter],
@@ -141,6 +143,15 @@ export default function AssignmentsHub() {
 
   const assignedTenderIds = new Set(assignments.map(a => a.tenderId));
   const unassignedTenders = eligibleTenders.filter(t => !assignedTenderIds.has(t.id));
+
+  const filteredAssignments = useMemo(() => {
+    return assignments.filter(assignment => {
+      const searchLower = searchQuery.toLowerCase();
+      const tenderTitle = assignment.tender?.title?.toLowerCase() || "";
+      const tenderId = assignment.tender?.t247Id?.toLowerCase() || "";
+      return tenderTitle.includes(searchLower) || tenderId.includes(searchLower);
+    });
+  }, [assignments, searchQuery]);
 
   const handleAssignTender = (tender: Tender) => {
     setTenderToAssign(tender);
@@ -264,12 +275,19 @@ export default function AssignmentsHub() {
   };
 
   const stageCounts = {
-    all: assignments.length,
-    assigned: assignments.filter(a => a.currentStage === "assigned").length,
-    in_progress: assignments.filter(a => a.currentStage === "in_progress").length,
-    ready_for_review: assignments.filter(a => a.currentStage === "ready_for_review").length,
-    submitted: assignments.filter(a => a.currentStage === "submitted").length,
+    all: filteredAssignments.length,
+    assigned: filteredAssignments.filter(a => a.currentStage === "assigned").length,
+    in_progress: filteredAssignments.filter(a => a.currentStage === "in_progress").length,
+    ready_for_review: filteredAssignments.filter(a => a.currentStage === "ready_for_review").length,
+    submitted: filteredAssignments.filter(a => a.currentStage === "submitted").length,
   };
+
+  const overdueCount = useMemo(() => {
+    return assignments.filter(a => {
+      const deadline = a.tender?.submissionDeadline;
+      return deadline && isPast(new Date(deadline));
+    }).length;
+  }, [assignments]);
 
   if (isLoading) {
     return (
@@ -298,7 +316,22 @@ export default function AssignmentsHub() {
           </Button>
         </div>
 
-        <div className="grid grid-cols-5 gap-4 mt-6">
+        <div className="grid grid-cols-6 gap-4 mt-6">
+          {overdueCount > 0 && (
+            <Card className="border-red-200 dark:border-red-800 hover-elevate">
+              <CardContent className="pt-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Overdue</p>
+                    <p className="text-2xl font-bold text-red-600 dark:text-red-400">{overdueCount}</p>
+                  </div>
+                  <div className="p-3 rounded-full bg-red-100 dark:bg-red-900">
+                    <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
           <Card className={`hover-elevate ${unassignedTenders.length > 0 ? "border-blue-200 dark:border-blue-800" : ""}`}>
             <CardContent className="pt-4">
               <div className="flex items-center justify-between">
@@ -434,8 +467,8 @@ export default function AssignmentsHub() {
       </div>
 
       <div className="flex-1 overflow-hidden flex flex-col">
-        <div className="p-4 border-b border-border flex items-center gap-4">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1">
+        <div className="p-4 border-b border-border space-y-4">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="">
             <TabsList>
               <TabsTrigger value="all" data-testid="tab-all">
                 All ({stageCounts.all})
@@ -455,7 +488,17 @@ export default function AssignmentsHub() {
             </TabsList>
           </Tabs>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative flex-1 max-w-xs">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Search by title or T247 ID..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9"
+                data-testid="input-search-assignments"
+              />
+            </div>
             <Filter className="w-4 h-4 text-muted-foreground" />
             <Select value={priorityFilter} onValueChange={setPriorityFilter}>
               <SelectTrigger className="w-32" data-testid="filter-priority">
@@ -486,11 +529,11 @@ export default function AssignmentsHub() {
         </div>
 
         <ScrollArea className="flex-1">
-          {assignments.length === 0 ? (
+          {filteredAssignments.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
               <ClipboardList className="w-12 h-12 mb-4 opacity-50" />
-              <p className="text-lg font-medium">No assignments found</p>
-              <p className="text-sm">Assign tenders from the Dashboard to get started</p>
+              <p className="text-lg font-medium">{searchQuery ? "No assignments match your search" : "No assignments found"}</p>
+              <p className="text-sm">{searchQuery ? "Try adjusting your search filters" : "Assign tenders from the Dashboard to get started"}</p>
             </div>
           ) : (
             <Table>
@@ -507,7 +550,7 @@ export default function AssignmentsHub() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {assignments.map((assignment) => {
+                {filteredAssignments.map((assignment) => {
                   const nextStage = getNextStage(assignment.currentStage || "assigned");
                   const config = stageConfig[assignment.currentStage || "assigned"];
                   const prioConfig = priorityConfig[assignment.priority || "normal"];

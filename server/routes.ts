@@ -1693,12 +1693,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Log tender assignment
       try {
+        const user = (req as any).user;
         const tender = await storage.getTenderById(tenderId);
         await storage.createAuditLog({
           action: 'assign',
           category: 'workflow',
-          userId: req.user.id,
-          userName: req.user.username || req.user.email,
+          userId: user?.id || 0,
+          userName: user?.username || user?.email || 'unknown',
           targetType: 'tender_assignment',
           targetId: assignment.id.toString(),
           targetName: tender?.t247Id || 'Unknown',
@@ -1770,11 +1771,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Log workflow stage change
       try {
+        const user = (req as any).user;
         await storage.createAuditLog({
           action: 'status_change',
           category: 'workflow',
-          userId: req.user.id,
-          userName: req.user.username || req.user.email,
+          userId: user?.id || 0,
+          userName: user?.username || user?.email || 'unknown',
           targetType: 'tender_assignment',
           targetId: id.toString(),
           targetName: `Stage: ${stage}`,
@@ -1844,12 +1846,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Log submission
       try {
+        const user = (req as any).user;
         const tender = await storage.getTenderById(tenderId);
         await storage.createAuditLog({
           action: 'submit',
           category: 'workflow',
-          userId: req.user.id,
-          userName: req.user.username || req.user.email,
+          userId: user?.id || 0,
+          userName: user?.username || user?.email || 'unknown',
           targetType: 'bidding_submission',
           targetId: submission.id.toString(),
           targetName: tender?.t247Id || 'Unknown',
