@@ -98,6 +98,7 @@ function checkStartupExemptionFromExcel(value: any): boolean {
 type TenderWithExcelFlags = Partial<InsertTender> & {
   t247Id: string;
   tenderType: 'gem' | 'non_gem';
+  similarCategory: string | null;
   excelMsmeExemption: boolean;
   excelStartupExemption: boolean;
 };
@@ -162,12 +163,20 @@ function parseTenderFromRow(row: any, tenderType: 'gem' | 'non_gem', sheet?: XLS
   
   // Get turnover requirement based on tender type
   let turnoverRequirement: string | null = null;
+  let similarCategory: string | null = null;
+  
   if (sheet && rowIndex !== undefined && tenderType === 'gem') {
     // GEM: Column S for "Minimum Average Annual Turnover of the bidder" in Lakh format
     const turnoverRaw = getColumnByLetter(sheet, rowIndex, 'S');
     const turnoverInCrore = parseLakhToCrore(turnoverRaw);
     if (turnoverInCrore !== null) {
       turnoverRequirement = turnoverInCrore.toString();
+    }
+    
+    // GEM: Column X for "Similar Category" (core service keywords)
+    const similarCatRaw = getColumnByLetter(sheet, rowIndex, 'X');
+    if (similarCatRaw) {
+      similarCategory = String(similarCatRaw).trim();
     }
   } else {
     // Non-GEM or fallback: use name-based lookup
@@ -207,6 +216,8 @@ function parseTenderFromRow(row: any, tenderType: 'gem' | 'non_gem', sheet?: XLS
     eligibilityCriteria: eligibilityCriteria ? String(eligibilityCriteria) : null,
     checklist: findColumn(row, 'checklist', 'documents', 'requireddocuments', 'doclist', 'documentlist') || null,
     rawData: row,
+    // GEM-specific: Similar Category from Column X
+    similarCategory,
     // Excel exemption flags
     excelMsmeExemption: checkMsmeExemptionFromExcel(msmeExemptionValue),
     excelStartupExemption: checkStartupExemptionFromExcel(startupExemptionValue),
@@ -308,9 +319,10 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
           // Use Excel exemption flags if available
           const excelMsme = tenderData.excelMsmeExemption;
           const excelStartup = tenderData.excelStartupExemption;
+          const tenderSimilarCategory = tenderData.similarCategory;
           
-          // Analyze eligibility with negative keywords
-          const matchResult = analyzeEligibility(tenderData, criteria!, negativeKeywords, excelMsme, excelStartup);
+          // Analyze eligibility with negative keywords and Similar Category
+          const matchResult = analyzeEligibility(tenderData, criteria!, negativeKeywords, excelMsme, excelStartup, tenderSimilarCategory);
           
           // Remove temporary Excel fields before inserting
           const { excelMsmeExemption, excelStartupExemption, ...tenderInsertData } = tenderData;

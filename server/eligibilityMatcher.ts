@@ -27,6 +27,44 @@ const PROJECT_TYPE_KEYWORDS: Record<string, string[]> = {
   'Cybersecurity': ['security', 'cyber', 'firewall', 'encryption', 'ssl', 'audit', 'vapt', 'penetration'],
 };
 
+// Core service keywords from GEM Column X (Similar Category)
+// These are our primary services - if matched with turnover = 100% match
+const CORE_SERVICE_KEYWORDS = [
+  'manpower',
+  'software',
+  'hiring of agency for it projects',
+  'it projects',
+  'milestone basis',
+  'custom bid for services',
+  'custom bid',
+  'it services',
+  'ites',
+  'it/ites',
+  'website',
+  'web development',
+  'web portal',
+  'web application',
+  'mobile',
+  'mobile app',
+  'app development',
+  'application development',
+  'portal development',
+  'digital',
+  'digitization',
+  'computerization',
+  'automation',
+  'erp',
+  'crm',
+  'information technology',
+  'ict',
+];
+
+function checkCoreServiceMatch(similarCategory: string | null | undefined): boolean {
+  if (!similarCategory) return false;
+  const lowerCategory = similarCategory.toLowerCase();
+  return CORE_SERVICE_KEYWORDS.some(keyword => lowerCategory.includes(keyword));
+}
+
 // More specific MSME exemption patterns - must be explicit exemption statements
 const MSME_EXEMPTION_PATTERNS = [
   /msme\s*(are|is)?\s*exempt(ed)?/i,
@@ -195,7 +233,8 @@ export function analyzeEligibility(
   criteria: CompanyCriteria,
   negativeKeywords: NegativeKeyword[] = [],
   excelMsmeExemption: boolean = false,
-  excelStartupExemption: boolean = false
+  excelStartupExemption: boolean = false,
+  similarCategory: string | null = null
 ): MatchResult {
   const eligibilityText = [
     tender.eligibilityCriteria || '',
@@ -241,13 +280,15 @@ export function analyzeEligibility(
   // Detect tags based on project type keywords
   const tags = detectTags(eligibilityText, criteria);
   
-  // Extract turnover requirement
-  const requiredTurnover = extractTurnoverRequirement(eligibilityText);
+  // Extract turnover requirement - use Excel value (from Column S) if available, otherwise parse from text
+  const excelTurnover = tender.turnoverRequirement ? parseFloat(String(tender.turnoverRequirement)) : null;
+  const textTurnover = extractTurnoverRequirement(eligibilityText);
+  const requiredTurnover = excelTurnover !== null && !isNaN(excelTurnover) ? excelTurnover : textTurnover;
   const companyTurnover = parseFloat(criteria.turnoverCr || "4");
   
   // Determine if turnover requirement is met
   let turnoverMet = true;
-  if (requiredTurnover !== null) {
+  if (requiredTurnover !== null && requiredTurnover > 0) {
     if (isMsmeExempted || isStartupExempted) {
       turnoverMet = true; // Exempted
     } else if (companyTurnover >= requiredTurnover) {
@@ -304,8 +345,15 @@ export function analyzeEligibility(
   // Calculate final percentage
   let matchPercentage = Math.round((matchScore / totalCriteria) * 100);
   
-  // If MSME/Startup exempted and all other criteria met, can go to 100%
-  if ((isMsmeExempted || isStartupExempted) && tags.length > 0 && !hasNegative) {
+  // Check if Similar Category (Column X) matches core services
+  const isCoreServiceMatch = checkCoreServiceMatch(similarCategory);
+  
+  // 100% MATCH CONDITIONS:
+  // 1. Similar Category matches core services AND turnover is met (directly or via exemption)
+  // 2. OR MSME/Startup exempted AND all other criteria met
+  if (isCoreServiceMatch && turnoverMet && !hasNegative) {
+    matchPercentage = 100;
+  } else if ((isMsmeExempted || isStartupExempted) && tags.length > 0 && !hasNegative) {
     matchPercentage = 100;
   }
   

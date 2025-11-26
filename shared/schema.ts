@@ -157,6 +157,9 @@ export const tenders = pgTable("tenders", {
   isCorrigendum: boolean("is_corrigendum").default(false),
   originalTenderId: integer("original_tender_id"),
   
+  // GEM-specific: Similar Category from Column X
+  similarCategory: text("similar_category"),
+  
   createdAt: timestamp("created_at").defaultNow(),
 });
 
