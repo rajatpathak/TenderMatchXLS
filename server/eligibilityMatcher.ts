@@ -228,6 +228,100 @@ function checkNegativeKeywords(text: string, negativeKeywords: NegativeKeyword[]
   return null;
 }
 
+// Check if tender is primarily about IT/Software SERVICES (not just contains IT keywords)
+// This is stricter - looks for service-oriented terms, not just IT product mentions
+function isPrimaryITServiceTender(title: string, eligibilityText: string): boolean {
+  const lowerTitle = title.toLowerCase();
+  const lowerText = eligibilityText.toLowerCase();
+  
+  // FIRST CHECK: If title starts with procurement/supply terms, it's NOT an IT service tender
+  // These are about BUYING products, not providing services
+  const procurementStarts = [
+    'supply of', 'procurement of', 'purchase of', 'buying of',
+    'rate contract for supply', 'supply and installation',
+    'providing and supplying', 'supply, installation'
+  ];
+  
+  const isProcurementTender = procurementStarts.some(term => lowerTitle.includes(term));
+  
+  // If it's a procurement tender, it's NOT an IT service tender - regardless of other keywords
+  if (isProcurementTender) {
+    return false;
+  }
+  
+  // Strong IT SERVICE indicators - must be about providing services, not buying products
+  const serviceVerbs = [
+    'development', 'deployment', 'implementation', 'integration', 
+    'design and development', 'customization', 'configuration',
+    'maintenance', 'support services', 'consulting', 'consultancy',
+    'hiring of agency', 'outsourcing', 'manpower supply', 'staffing',
+    'amc', 'annual maintenance contract', 'operation and maintenance',
+    'creation of', 'building of', 'setting up'
+  ];
+  
+  // Check if title contains service verbs (strong indicator)
+  const hasTitleServiceVerb = serviceVerbs.some(verb => lowerTitle.includes(verb));
+  
+  // Check eligibility text for service-oriented content
+  const hasTextServiceVerb = serviceVerbs.some(verb => lowerText.includes(verb));
+  
+  // If title explicitly mentions software/website/app DEVELOPMENT/SERVICES, it's IT service
+  if (hasTitleServiceVerb && (
+    lowerTitle.includes('software') || 
+    lowerTitle.includes('website') || 
+    lowerTitle.includes('web portal') ||
+    lowerTitle.includes('mobile app') ||
+    lowerTitle.includes('application')
+  )) {
+    return true;
+  }
+  
+  // If it's about hiring agency for IT projects
+  if (lowerTitle.includes('hiring') && (lowerTitle.includes('it') || lowerTitle.includes('software'))) {
+    return true;
+  }
+  
+  // If title contains IT service keywords AND service verbs in text
+  if (hasTextServiceVerb && (
+    lowerTitle.includes('it project') ||
+    lowerTitle.includes('it/ites') ||
+    lowerTitle.includes('software services') ||
+    lowerTitle.includes('it services')
+  )) {
+    return true;
+  }
+  
+  return false;
+}
+
+// Check if negative keyword is the PRIMARY focus of the tender (appears prominently in title)
+function isNegativeKeywordPrimaryFocus(title: string, negativeKeyword: string): boolean {
+  const lowerTitle = title.toLowerCase();
+  const lowerKeyword = negativeKeyword.toLowerCase();
+  
+  // If the negative keyword appears in the title, it's likely the primary focus
+  if (lowerTitle.includes(lowerKeyword)) {
+    return true;
+  }
+  
+  // Check for related procurement terms that indicate buying products (not services)
+  const procurementTerms = [
+    'supply of', 'procurement of', 'purchase of', 'buying', 
+    'installation of', 'providing', 'supply and installation',
+    'rate contract for', 'empanelment for supply'
+  ];
+  
+  // If title has procurement terms + equipment-related words, it's about buying stuff
+  const hasProcurementTerm = procurementTerms.some(term => lowerTitle.includes(term));
+  const equipmentRelated = ['equipment', 'hardware', 'machine', 'device', 'instrument', 'furniture', 'class room', 'classroom', 'lab', 'laboratory'].some(eq => lowerTitle.includes(eq));
+  
+  if (hasProcurementTerm && equipmentRelated) {
+    return true;
+  }
+  
+  return false;
+}
+
 export function analyzeEligibility(
   tender: Partial<InsertTender>,
   criteria: CompanyCriteria,
@@ -266,6 +360,62 @@ export function analyzeEligibility(
   // Check if tender matches core IT/Software services (from title or Similar Category)
   const isCoreServiceMatch = checkCoreServiceMatch(similarCategory);
   const textLower = eligibilityText.toLowerCase();
+  const titleText = tender.title || '';
+  
+  // Check for negative keywords
+  const matchedNegativeKeyword = checkNegativeKeywords(eligibilityText, negativeKeywords);
+  
+  // SMART NEGATIVE KEYWORD CHECK:
+  // Priority: If negative keyword appears in TITLE, it's likely the PRIMARY focus
+  // Exception: If the tender is clearly about IT SERVICES (development, deployment, etc.)
+  if (matchedNegativeKeyword) {
+    const isNegativeKwInTitle = isNegativeKeywordPrimaryFocus(titleText, matchedNegativeKeyword);
+    const isITServiceTender = isPrimaryITServiceTender(titleText, eligibilityText);
+    
+    // If negative keyword is in the title AND it's not primarily an IT service tender
+    // Mark as not_relevant
+    if (isNegativeKwInTitle && !isITServiceTender) {
+      return {
+        matchPercentage: 0,
+        isMsmeExempted: false,
+        isStartupExempted: false,
+        tags: [],
+        analysisStatus: "analyzed",
+        eligibilityStatus: "not_relevant",
+        notRelevantKeyword: matchedNegativeKeyword,
+        turnoverRequired: null,
+        turnoverMet: false,
+      };
+    }
+    
+    // If negative keyword is only in eligibility text (not title), 
+    // allow IT tenders to pass through but mark non-IT as not_relevant
+    const hasCoreITKeywords = [
+      'software', 'website', 'web portal', 'web application', 'web development',
+      'mobile app', 'app development', 'application development', 'it project',
+      'it/ites', 'ites', 'it services', 'digitization', 'portal',
+      'manpower', 'erp', 'crm', 'data processing', 'solution design',
+      'computerization', 'automation', 'information technology', 'ict'
+    ].some(kw => textLower.includes(kw));
+    
+    const matchesCoreProjectTypes = tags.length > 0 || isCoreServiceMatch || hasCoreITKeywords;
+    
+    if (!matchesCoreProjectTypes) {
+      return {
+        matchPercentage: 0,
+        isMsmeExempted: false,
+        isStartupExempted: false,
+        tags: [],
+        analysisStatus: "analyzed",
+        eligibilityStatus: "not_relevant",
+        notRelevantKeyword: matchedNegativeKeyword,
+        turnoverRequired: null,
+        turnoverMet: false,
+      };
+    }
+  }
+  
+  // Continue with IT keyword detection for scoring
   const hasCoreITKeywords = [
     'software', 'website', 'web portal', 'web application', 'web development',
     'mobile app', 'app development', 'application development', 'it project',
@@ -275,24 +425,6 @@ export function analyzeEligibility(
   ].some(kw => textLower.includes(kw));
   
   const matchesCoreProjectTypes = tags.length > 0 || isCoreServiceMatch || hasCoreITKeywords;
-  
-  // SMART NEGATIVE KEYWORD CHECK:
-  // Only apply negative keywords if the tender does NOT match our core services
-  // If tender is clearly about software/IT services, ignore negative keywords
-  const matchedNegativeKeyword = checkNegativeKeywords(eligibilityText, negativeKeywords);
-  if (matchedNegativeKeyword && !matchesCoreProjectTypes) {
-    return {
-      matchPercentage: 0,
-      isMsmeExempted: false,
-      isStartupExempted: false,
-      tags: [],
-      analysisStatus: "analyzed",
-      eligibilityStatus: "not_relevant",
-      notRelevantKeyword: matchedNegativeKeyword,
-      turnoverRequired: null,
-      turnoverMet: false,
-    };
-  }
   
   // Extract turnover requirement in LAKHS
   // Excel value (from Column S) is already in Lakhs, text parsing also returns Lakhs
