@@ -1430,6 +1430,314 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ==========================================
+  // TEAM MANAGEMENT & WORKFLOW ROUTES
+  // ==========================================
+
+  // Team Member Routes
+  app.get('/api/team-members', isAuthenticated, async (req, res) => {
+    try {
+      const members = await storage.getTeamMembers();
+      // Don't send password hashes to client
+      const safeMembersData = members.map(({ password, ...rest }) => rest);
+      res.json(safeMembersData);
+    } catch (error) {
+      console.error("Error fetching team members:", error);
+      res.status(500).json({ message: "Failed to fetch team members" });
+    }
+  });
+
+  app.get('/api/team-members/:id', isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const member = await storage.getTeamMemberById(id);
+      if (!member) {
+        return res.status(404).json({ message: "Team member not found" });
+      }
+      const { password, ...safeMember } = member;
+      res.json(safeMember);
+    } catch (error) {
+      console.error("Error fetching team member:", error);
+      res.status(500).json({ message: "Failed to fetch team member" });
+    }
+  });
+
+  app.post('/api/team-members', isAuthenticated, async (req: any, res) => {
+    try {
+      const { username, password, email, fullName, role } = req.body;
+      
+      if (!username || !password || !fullName) {
+        return res.status(400).json({ message: "Username, password, and full name are required" });
+      }
+
+      // Check if username already exists
+      const existing = await storage.getTeamMemberByUsername(username);
+      if (existing) {
+        return res.status(400).json({ message: "Username already exists" });
+      }
+
+      // Hash password
+      const bcrypt = await import('bcrypt');
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      const member = await storage.createTeamMember({
+        username,
+        password: hashedPassword,
+        email: email || null,
+        fullName,
+        role: role || 'bidder',
+        isActive: true,
+        createdBy: null, // Could link to current user if needed
+      });
+
+      const { password: _, ...safeMember } = member;
+      res.json(safeMember);
+    } catch (error: any) {
+      console.error("Error creating team member:", error);
+      if (error.code === '23505') {
+        return res.status(400).json({ message: "Username or email already exists" });
+      }
+      res.status(500).json({ message: "Failed to create team member" });
+    }
+  });
+
+  app.put('/api/team-members/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { username, password, email, fullName, role, isActive } = req.body;
+      
+      const updateData: any = {};
+      if (username !== undefined) updateData.username = username;
+      if (email !== undefined) updateData.email = email;
+      if (fullName !== undefined) updateData.fullName = fullName;
+      if (role !== undefined) updateData.role = role;
+      if (isActive !== undefined) updateData.isActive = isActive;
+      
+      // Only hash password if it's being updated
+      if (password) {
+        const bcrypt = await import('bcrypt');
+        updateData.password = await bcrypt.hash(password, 10);
+      }
+
+      const member = await storage.updateTeamMember(id, updateData);
+      if (!member) {
+        return res.status(404).json({ message: "Team member not found" });
+      }
+      
+      const { password: _, ...safeMember } = member;
+      res.json(safeMember);
+    } catch (error: any) {
+      console.error("Error updating team member:", error);
+      if (error.code === '23505') {
+        return res.status(400).json({ message: "Username or email already exists" });
+      }
+      res.status(500).json({ message: "Failed to update team member" });
+    }
+  });
+
+  app.delete('/api/team-members/:id', isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteTeamMember(id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting team member:", error);
+      res.status(500).json({ message: "Failed to delete team member" });
+    }
+  });
+
+  // Tender Assignment Routes
+  app.get('/api/assignments', isAuthenticated, async (req, res) => {
+    try {
+      const assignments = await storage.getTenderAssignments();
+      res.json(assignments);
+    } catch (error) {
+      console.error("Error fetching assignments:", error);
+      res.status(500).json({ message: "Failed to fetch assignments" });
+    }
+  });
+
+  app.get('/api/assignments/user/:userId', isAuthenticated, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const assignments = await storage.getAssignmentsByUserId(userId);
+      res.json(assignments);
+    } catch (error) {
+      console.error("Error fetching user assignments:", error);
+      res.status(500).json({ message: "Failed to fetch user assignments" });
+    }
+  });
+
+  app.get('/api/tenders/:id/assignment', isAuthenticated, async (req, res) => {
+    try {
+      const tenderId = parseInt(req.params.id);
+      const assignment = await storage.getAssignmentByTenderId(tenderId);
+      res.json(assignment || null);
+    } catch (error) {
+      console.error("Error fetching tender assignment:", error);
+      res.status(500).json({ message: "Failed to fetch tender assignment" });
+    }
+  });
+
+  app.post('/api/assignments', isAuthenticated, async (req, res) => {
+    try {
+      const { tenderId, assignedTo, assignedBy, priority, notes } = req.body;
+      
+      if (!tenderId || !assignedTo || !assignedBy) {
+        return res.status(400).json({ message: "Tender ID, assignee, and assigner are required" });
+      }
+
+      const assignment = await storage.createTenderAssignment({
+        tenderId,
+        assignedTo,
+        assignedBy,
+        priority: priority || 'normal',
+        notes: notes || null,
+        isActive: true,
+      });
+
+      // Record initial workflow history
+      await storage.createWorkflowHistory({
+        assignmentId: assignment.id,
+        fromStage: null,
+        toStage: 'assigned',
+        changedBy: assignedBy,
+        note: 'Tender assigned',
+      });
+
+      res.json(assignment);
+    } catch (error) {
+      console.error("Error creating assignment:", error);
+      res.status(500).json({ message: "Failed to create assignment" });
+    }
+  });
+
+  app.put('/api/assignments/:id', isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { assignedTo, priority, notes } = req.body;
+      
+      const updateData: any = {};
+      if (assignedTo !== undefined) updateData.assignedTo = assignedTo;
+      if (priority !== undefined) updateData.priority = priority;
+      if (notes !== undefined) updateData.notes = notes;
+
+      const assignment = await storage.updateTenderAssignment(id, updateData);
+      if (!assignment) {
+        return res.status(404).json({ message: "Assignment not found" });
+      }
+      res.json(assignment);
+    } catch (error) {
+      console.error("Error updating assignment:", error);
+      res.status(500).json({ message: "Failed to update assignment" });
+    }
+  });
+
+  app.delete('/api/assignments/:id', isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteTenderAssignment(id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting assignment:", error);
+      res.status(500).json({ message: "Failed to delete assignment" });
+    }
+  });
+
+  // Workflow Stage Update Route
+  app.post('/api/assignments/:id/stage', isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { stage, changedBy, note } = req.body;
+      
+      if (!stage || !changedBy) {
+        return res.status(400).json({ message: "Stage and changedBy are required" });
+      }
+
+      const validStages = ['assigned', 'in_progress', 'ready_for_review', 'submitted'];
+      if (!validStages.includes(stage)) {
+        return res.status(400).json({ message: "Invalid stage. Must be one of: " + validStages.join(', ') });
+      }
+
+      const assignment = await storage.updateAssignmentStage(id, stage, changedBy, note);
+      if (!assignment) {
+        return res.status(404).json({ message: "Assignment not found" });
+      }
+      res.json(assignment);
+    } catch (error) {
+      console.error("Error updating assignment stage:", error);
+      res.status(500).json({ message: "Failed to update assignment stage" });
+    }
+  });
+
+  // Workflow History Route
+  app.get('/api/assignments/:id/history', isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const history = await storage.getWorkflowHistory(id);
+      res.json(history);
+    } catch (error) {
+      console.error("Error fetching workflow history:", error);
+      res.status(500).json({ message: "Failed to fetch workflow history" });
+    }
+  });
+
+  // Bidding Submissions Routes
+  app.get('/api/submissions', isAuthenticated, async (req, res) => {
+    try {
+      const submissions = await storage.getBiddingSubmissions();
+      res.json(submissions);
+    } catch (error) {
+      console.error("Error fetching submissions:", error);
+      res.status(500).json({ message: "Failed to fetch submissions" });
+    }
+  });
+
+  app.post('/api/submissions', isAuthenticated, async (req, res) => {
+    try {
+      const { tenderId, assignmentId, submittedBy, submittedBudget, submissionDate, portalReferenceNumber, notes } = req.body;
+      
+      if (!tenderId || !assignmentId || !submittedBy || !submittedBudget || !submissionDate) {
+        return res.status(400).json({ message: "Tender ID, assignment ID, submitter, budget, and date are required" });
+      }
+
+      const submission = await storage.createBiddingSubmission({
+        tenderId,
+        assignmentId,
+        submittedBy,
+        submittedBudget: submittedBudget.toString(),
+        submissionDate: new Date(submissionDate),
+        portalReferenceNumber: portalReferenceNumber || null,
+        notes: notes || null,
+      });
+
+      // Record workflow history
+      await storage.createWorkflowHistory({
+        assignmentId,
+        fromStage: 'ready_for_review',
+        toStage: 'submitted',
+        changedBy: submittedBy,
+        note: `Submitted to portal with budget: ${submittedBudget} Lakhs`,
+      });
+
+      res.json(submission);
+    } catch (error) {
+      console.error("Error creating submission:", error);
+      res.status(500).json({ message: "Failed to create submission" });
+    }
+  });
+
+  // Workflow Stats Route
+  app.get('/api/workflow-stats', isAuthenticated, async (req, res) => {
+    try {
+      const stats = await storage.getWorkflowStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("Error fetching workflow stats:", error);
+      res.status(500).json({ message: "Failed to fetch workflow stats" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
