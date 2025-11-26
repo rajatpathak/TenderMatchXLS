@@ -7,7 +7,7 @@ TenderMatch is a web application for analyzing government tender eligibility. It
 - **Frontend**: React with TypeScript, Tailwind CSS, Shadcn UI
 - **Backend**: Express.js with Node.js
 - **Database**: PostgreSQL with Drizzle ORM
-- **Authentication**: Simple username/password (admin/admin)
+- **Authentication**: Secure bcrypt-based admin authentication (configurable via env vars)
 - **File Processing**: XLSX for Excel parsing, pdf-parse for PDF extraction
 
 ## Project Structure
@@ -85,7 +85,21 @@ TenderMatch is a web application for analyzing government tender eligibility. It
 - `manual_review` - Requires manual PDF analysis
 
 ## Running the Project
+
+### Development
 The application starts with `npm run dev` which runs both the Express backend and Vite frontend.
+Default dev credentials: admin/admin
+
+### Production Deployment (VPS)
+1. Copy `.env.example` to `.env` and configure
+2. Generate password hash: `node scripts/generate-password-hash.js <password>`
+3. Set `ADMIN_PASSWORD_HASH` and `SESSION_SECRET` in `.env`
+4. Run `npm run db:push` to initialize database
+5. Run `npx tsx scripts/seed.ts` to seed initial data
+6. Build: `npm run build`
+7. Start: `npm start`
+
+See `DEPLOYMENT.md` for full VPS deployment guide with Nginx/PM2/SSL.
 
 ## Company Criteria (Default)
 - Turnover: 400 Lakhs (4 Crore)
