@@ -548,9 +548,80 @@ export function TenderDetailModal({ tender, open, onClose, onViewCorrigendum }: 
               <>
                 <Separator />
                 <div>
-                  <h4 className="text-sm font-semibold text-foreground mb-3">Checklist</h4>
-                  <div className="rounded-lg bg-muted/50 p-4 text-sm text-foreground whitespace-pre-wrap">
-                    {tender.checklist}
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="p-1.5 rounded-md bg-emerald-500/10">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    </div>
+                    <h4 className="text-sm font-semibold text-foreground">Required Documents Checklist</h4>
+                    <Badge variant="outline" className="text-xs ml-auto">
+                      {tender.checklist.split(/[\n\d]+\./).filter(item => item.trim()).length} items
+                    </Badge>
+                  </div>
+                  <div className="rounded-lg border-2 border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-900/10 p-4">
+                    <div className="grid gap-2">
+                      {tender.checklist.split(/[\n]/).filter(item => item.trim()).map((item, index) => {
+                        const trimmedItem = item.trim();
+                        if (!trimmedItem) return null;
+                        
+                        const isCertificate = /certificate|certification|ISO/i.test(trimmedItem);
+                        const isFinancial = /turnover|balance.?sheet|financial|audited|CA|accountant/i.test(trimmedItem);
+                        const isExperience = /experience|contract|order|work.?order/i.test(trimmedItem);
+                        const isCompliance = /compliance|undertaking|affidavit|declaration/i.test(trimmedItem);
+                        const isTechnical = /technical|datasheet|specification|OEM/i.test(trimmedItem);
+                        
+                        const getItemStyle = () => {
+                          if (isFinancial) return 'bg-blue-500/10 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300';
+                          if (isCertificate) return 'bg-purple-500/10 border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300';
+                          if (isExperience) return 'bg-amber-500/10 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300';
+                          if (isCompliance) return 'bg-rose-500/10 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300';
+                          if (isTechnical) return 'bg-cyan-500/10 border-cyan-200 dark:border-cyan-800 text-cyan-700 dark:text-cyan-300';
+                          return 'bg-muted/50 border-border text-foreground';
+                        };
+                        
+                        const getIconColor = () => {
+                          if (isFinancial) return 'text-blue-500';
+                          if (isCertificate) return 'text-purple-500';
+                          if (isExperience) return 'text-amber-500';
+                          if (isCompliance) return 'text-rose-500';
+                          if (isTechnical) return 'text-cyan-500';
+                          return 'text-emerald-500';
+                        };
+                        
+                        return (
+                          <div 
+                            key={index} 
+                            className={`flex items-center gap-3 text-sm rounded-md p-2.5 border ${getItemStyle()}`}
+                          >
+                            <CheckCircle2 className={`w-4 h-4 shrink-0 ${getIconColor()}`} />
+                            <span className="font-medium">{trimmedItem}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  
+                  {/* Legend */}
+                  <div className="flex flex-wrap gap-3 mt-3 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3 h-3 text-blue-500" />
+                      <span>Financial</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3 h-3 text-purple-500" />
+                      <span>Certifications</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3 h-3 text-amber-500" />
+                      <span>Experience</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3 h-3 text-cyan-500" />
+                      <span>Technical</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3 h-3 text-rose-500" />
+                      <span>Compliance</span>
+                    </div>
                   </div>
                 </div>
               </>
