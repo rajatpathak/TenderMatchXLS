@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback } from "react";
+import { createContext, useContext, useState, useCallback, ReactNode } from "react";
 
 interface UploadProgress {
   fileName: string;
@@ -15,9 +15,9 @@ interface UploadProgressContextType {
   clearUpload: () => void;
 }
 
-export const UploadProgressContext = createContext<UploadProgressContextType | undefined>(undefined);
+const UploadProgressContext = createContext<UploadProgressContextType | undefined>(undefined);
 
-export function UploadProgressProvider({ children }: { children: React.ReactNode }) {
+export function UploadProgressProvider({ children }: { children: ReactNode }): JSX.Element {
   const [upload, setUpload] = useState<UploadProgress | null>(null);
 
   const startUpload = useCallback((fileName: string) => {
@@ -30,11 +30,11 @@ export function UploadProgressProvider({ children }: { children: React.ReactNode
   }, []);
 
   const updateProgress = useCallback((progress: number, message: string) => {
-    setUpload((prev) => prev ? { ...prev, progress: Math.min(progress, 99), message } : null);
+    setUpload((prev) => (prev ? { ...prev, progress: Math.min(progress, 99), message } : null));
   }, []);
 
   const completeUpload = useCallback(() => {
-    setUpload((prev) => prev ? { ...prev, progress: 100, isUploading: false, message: "Complete" } : null);
+    setUpload((prev) => (prev ? { ...prev, progress: 100, isUploading: false, message: "Complete" } : null));
   }, []);
 
   const clearUpload = useCallback(() => {
