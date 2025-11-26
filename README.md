@@ -65,25 +65,8 @@ SESSION_SECRET=your-secret-key-min-32-chars
 
 ## Deployment Guide
 
-### Option 1: Deploy on Replit
 
-1. Fork or import this project to Replit
-2. The PostgreSQL database will be automatically provisioned
-3. Set `SESSION_SECRET` in the Secrets tab
-4. Click "Run" - the app will start automatically
-5. Use the "Publish" button to deploy to production
-
-### Option 2: Deploy on Railway/Render
-
-1. Push code to GitHub
-2. Connect your repository to Railway/Render
-3. Add PostgreSQL database addon
-4. Set environment variables:
-   - `DATABASE_URL` (from database addon)
-   - `SESSION_SECRET`
-5. Deploy
-
-### Option 3: Deploy on VPS/Server
+### Deploy on VPS/Server
 
 #### Prerequisites
 - Node.js 18+ 
