@@ -27,6 +27,7 @@ import {
   FileSearch,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { apiRequest } from "@/lib/queryClient";
 
 const mainMenuItems = [
   {
@@ -210,7 +211,17 @@ export function AppSidebar() {
             variant="ghost" 
             size="icon"
             className="shrink-0 text-sidebar-foreground hover:bg-sidebar-accent"
-            onClick={() => window.location.href = "/api/logout"}
+            onClick={async () => {
+              try {
+                await apiRequest("POST", "/api/logout");
+                // Force full page reload to clear all state and redirect to login
+                window.location.replace("/");
+              } catch (error) {
+                console.error("Logout failed:", error);
+                // Force reload even on error to attempt logout
+                window.location.replace("/");
+              }
+            }}
             data-testid="button-logout"
           >
             <LogOut className="w-4 h-4" />

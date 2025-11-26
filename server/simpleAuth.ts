@@ -26,8 +26,23 @@ const getAdminConfig = () => {
 
 async function verifyPassword(inputPassword: string): Promise<boolean> {
   const config = getAdminConfig();
+  const isProduction = process.env.NODE_ENV === "production";
   
-  // In production, use bcrypt hash comparison
+  // In production, ONLY accept bcrypt hash - reject plaintext passwords
+  if (isProduction) {
+    if (!config.passwordHash) {
+      console.error("❌ ADMIN_PASSWORD_HASH is required in production. Plaintext passwords are not allowed.");
+      return false;
+    }
+    try {
+      return await bcrypt.compare(inputPassword, config.passwordHash);
+    } catch (error) {
+      console.error("Password verification error:", error);
+      return false;
+    }
+  }
+  
+  // Development mode: prefer hash, but allow fallbacks
   if (config.passwordHash) {
     try {
       return await bcrypt.compare(inputPassword, config.passwordHash);
@@ -37,19 +52,15 @@ async function verifyPassword(inputPassword: string): Promise<boolean> {
     }
   }
   
-  // In development/fallback, allow plain password comparison
+  // Development fallback: allow plain password from env
   if (config.plainPassword) {
+    console.warn("⚠️  WARNING: Using plaintext ADMIN_PASSWORD. Use ADMIN_PASSWORD_HASH for production!");
     return inputPassword === config.plainPassword;
   }
   
-  // Default fallback for development only (NOT recommended for production)
-  if (process.env.NODE_ENV !== "production") {
-    console.warn("⚠️  WARNING: Using default development credentials. Set ADMIN_PASSWORD_HASH for production!");
-    return inputPassword === "admin";
-  }
-  
-  console.error("❌ No admin password configured. Set ADMIN_PASSWORD_HASH environment variable.");
-  return false;
+  // Development fallback: allow default credentials
+  console.warn("⚠️  WARNING: Using default dev credentials (admin/admin). Set ADMIN_PASSWORD_HASH for production!");
+  return inputPassword === "admin";
 }
 
 async function ensureAdminUserExists() {
@@ -105,6 +116,24 @@ export function getSession() {
 }
 
 export async function setupAuth(app: Express) {
+  // Runtime validation for production
+  if (process.env.NODE_ENV === "production") {
+    if (!process.env.ADMIN_PASSWORD_HASH) {
+      throw new Error(
+        "ADMIN_PASSWORD_HASH is required in production. " +
+        "Generate with: node scripts/generate-password-hash.js <password>"
+      );
+    }
+    if (!process.env.SESSION_SECRET) {
+      throw new Error("SESSION_SECRET is required in production");
+    }
+    console.log("✅ Production authentication configured with bcrypt hash");
+  } else {
+    if (!process.env.ADMIN_PASSWORD_HASH) {
+      console.warn("⚠️  Development mode: Using fallback admin credentials (admin/admin)");
+    }
+  }
+
   app.set("trust proxy", 1);
   app.use(getSession());
 
@@ -142,9 +171,16 @@ export async function setupAuth(app: Express) {
   app.post("/api/logout", (req, res) => {
     req.session.destroy((err) => {
       if (err) {
+        console.error("Session destroy error:", err);
         res.status(500).json({ message: "Failed to logout" });
       } else {
-        res.json({ success: true });
+        // Clear the session cookie
+        res.clearCookie("connect.sid", {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+        });
+        res.status(200).json({ success: true });
       }
     });
   });

@@ -4,17 +4,22 @@ import { sql } from "drizzle-orm";
 
 async function validateEnvironment() {
   const errors: string[] = [];
+  const isProduction = process.env.NODE_ENV === "production";
   
   if (!process.env.DATABASE_URL) {
     errors.push("DATABASE_URL is required");
   }
   
-  if (process.env.NODE_ENV === "production") {
+  if (isProduction) {
     if (!process.env.SESSION_SECRET) {
       errors.push("SESSION_SECRET is required in production");
     }
-    if (!process.env.ADMIN_PASSWORD_HASH && !process.env.ADMIN_PASSWORD) {
-      errors.push("ADMIN_PASSWORD_HASH (or ADMIN_PASSWORD for dev) is required");
+    if (!process.env.ADMIN_PASSWORD_HASH) {
+      errors.push("ADMIN_PASSWORD_HASH is required in production (plaintext passwords not allowed)");
+      if (process.env.ADMIN_PASSWORD) {
+        errors.push("  → You have ADMIN_PASSWORD set, but production requires ADMIN_PASSWORD_HASH");
+        errors.push("  → Generate with: node scripts/generate-password-hash.js <your-password>");
+      }
     }
   }
   

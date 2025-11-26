@@ -75,13 +75,13 @@ npm start
 |----------|----------|-------------|
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
 | `SESSION_SECRET` | Yes | Random string for session encryption (32+ chars) |
-| `ADMIN_PASSWORD_HASH` | Yes* | Bcrypt hash of admin password |
+| `ADMIN_PASSWORD_HASH` | Yes | Bcrypt hash of admin password (see below) |
 | `ADMIN_USERNAME` | No | Admin username (default: admin) |
 | `ADMIN_EMAIL` | No | Admin email address |
 | `NODE_ENV` | No | Set to "production" for production mode |
 | `PORT` | No | Server port (default: 5000) |
 
-*In development, you can use `ADMIN_PASSWORD` instead of hash.
+> **Security Note:** In production (`NODE_ENV=production`), the application ONLY accepts bcrypt password hashes. Plaintext `ADMIN_PASSWORD` is rejected for security. Always use `ADMIN_PASSWORD_HASH` in production.
 
 ## Production Setup with PM2
 
