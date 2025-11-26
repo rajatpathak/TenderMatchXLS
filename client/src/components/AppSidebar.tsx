@@ -30,6 +30,9 @@ import {
   FileSearch,
   Clock,
   RefreshCw,
+  Users,
+  Workflow,
+  Send,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest } from "@/lib/queryClient";
@@ -46,6 +49,14 @@ interface Stats {
   todayUploads: number;
 }
 
+interface WorkflowStats {
+  assigned: number;
+  inProgress: number;
+  readyForReview: number;
+  submitted: number;
+  totalBudget: number;
+}
+
 export function AppSidebar() {
   const [location] = useLocation();
   const { user } = useAuth();
@@ -54,6 +65,11 @@ export function AppSidebar() {
   const { data: stats } = useQuery<Stats>({
     queryKey: ['/api/stats'],
     refetchInterval: isRunning ? 2000 : 30000,
+  });
+
+  const { data: workflowStats } = useQuery<WorkflowStats>({
+    queryKey: ['/api/workflow-stats'],
+    refetchInterval: 30000,
   });
 
   const mainMenuItems = [
@@ -119,6 +135,30 @@ export function AppSidebar() {
       icon: FileStack,
       badge: stats?.corrigendum,
       color: "text-purple-500",
+    },
+  ];
+
+  const workflowItems = [
+    {
+      title: "Bidding Workflow",
+      url: "/workflow",
+      icon: Workflow,
+      badge: (workflowStats?.assigned || 0) + (workflowStats?.inProgress || 0) + (workflowStats?.readyForReview || 0),
+      color: "text-blue-500",
+    },
+    {
+      title: "Submitted Tenders",
+      url: "/submissions",
+      icon: Send,
+      badge: workflowStats?.submitted,
+      color: "text-emerald-500",
+    },
+    {
+      title: "Team Management",
+      url: "/team",
+      icon: Users,
+      badge: undefined,
+      color: "text-indigo-500",
     },
   ];
 
@@ -207,6 +247,38 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {tenderCategories.map((item) => {
+                const isActive = location === item.url;
+                return (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton 
+                      asChild
+                      isActive={isActive}
+                      data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
+                    >
+                      <Link href={item.url}>
+                        <item.icon className={`w-4 h-4 ${item.color}`} />
+                        <span>{item.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                    {item.badge !== undefined && item.badge !== 0 && (
+                      <SidebarMenuBadge>
+                        <Badge variant="secondary" className="text-[10px] h-5 min-w-5 px-1.5">
+                          {item.badge}
+                        </Badge>
+                      </SidebarMenuBadge>
+                    )}
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Workflow</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {workflowItems.map((item) => {
                 const isActive = location === item.url;
                 return (
                   <SidebarMenuItem key={item.title}>
