@@ -1435,6 +1435,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ==========================================
 
   // Team Member Routes
+  // Get current team member based on authenticated user's email
+  app.get('/api/me/team-member', isAuthenticated, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.email) {
+        return res.status(404).json({ message: "User email not found" });
+      }
+      const member = await storage.getTeamMemberByEmail(user.email);
+      if (!member) {
+        return res.status(404).json({ message: "No team member found for this user" });
+      }
+      const { password, ...safeMember } = member;
+      res.json(safeMember);
+    } catch (error) {
+      console.error("Error fetching current team member:", error);
+      res.status(500).json({ message: "Failed to fetch team member" });
+    }
+  });
+
   app.get('/api/team-members', isAuthenticated, async (req, res) => {
     try {
       const members = await storage.getTeamMembers();

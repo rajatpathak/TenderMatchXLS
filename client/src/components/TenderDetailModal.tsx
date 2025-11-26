@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -44,9 +45,11 @@ import {
   Undo2,
   Ban,
   XCircle,
-  Loader2
+  Loader2,
+  UserPlus,
+  Clock,
 } from "lucide-react";
-import type { Tender } from "@shared/schema";
+import type { Tender, TeamMember } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
@@ -80,9 +83,26 @@ const overrideReasons = [
 export function TenderDetailModal({ tender, open, onClose, onViewCorrigendum }: TenderDetailModalProps) {
   const { toast } = useToast();
   const [showOverridePanel, setShowOverridePanel] = useState(false);
+  const [showAssignPanel, setShowAssignPanel] = useState(false);
   const [overrideStatus, setOverrideStatus] = useState<string>("");
   const [overrideReason, setOverrideReason] = useState<string>("");
   const [overrideComment, setOverrideComment] = useState<string>("");
+  const [assigneeId, setAssigneeId] = useState<string>("");
+  const [assignmentPriority, setAssignmentPriority] = useState<string>("normal");
+  const [assignmentDeadline, setAssignmentDeadline] = useState<string>("");
+  const [assignmentNote, setAssignmentNote] = useState<string>("");
+
+  const { data: teamMembers = [] } = useQuery<Omit<TeamMember, "password">[]>({
+    queryKey: ["/api/team-members"],
+    enabled: open,
+  });
+
+  // Get the current authenticated user's team member record
+  const { data: currentTeamMember } = useQuery<Omit<TeamMember, "password">>({
+    queryKey: ["/api/me/team-member"],
+    enabled: open,
+    retry: false,
+  });
 
   const overrideMutation = useMutation({
     mutationFn: async (data: { overrideStatus: string; overrideReason: string; overrideComment: string }) => {
@@ -141,6 +161,75 @@ export function TenderDetailModal({ tender, open, onClose, onViewCorrigendum }: 
       });
     },
   });
+
+  const assignMutation = useMutation({
+    mutationFn: async (data: {
+      tenderId: number;
+      assigneeId: number;
+      assignedBy: number;
+      priority?: string;
+      internalDeadline?: string;
+      notes?: string;
+    }) => {
+      return apiRequest("POST", "/api/assignments", data);
+    },
+    onSuccess: () => {
+      toast({
+        title: "Tender Assigned",
+        description: "The tender has been assigned to the team member.",
+      });
+      setShowAssignPanel(false);
+      setAssigneeId("");
+      setAssignmentPriority("normal");
+      setAssignmentDeadline("");
+      setAssignmentNote("");
+      queryClient.invalidateQueries({ queryKey: ["/api/assignments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/workflow-stats"] });
+      onClose();
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Assignment Failed",
+        description: error.message || "Failed to assign tender",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleAssign = () => {
+    if (!tender || !assigneeId) {
+      toast({
+        title: "Missing Information",
+        description: "Please select a team member to assign",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!currentTeamMember) {
+      toast({
+        title: "Error",
+        description: "You are not registered as a team member. Please contact an admin to add you to the team.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (currentTeamMember.role !== "admin" && currentTeamMember.role !== "manager") {
+      toast({
+        title: "Permission Denied",
+        description: "Only admins and managers can assign tenders",
+        variant: "destructive",
+      });
+      return;
+    }
+    assignMutation.mutate({
+      tenderId: tender.id,
+      assigneeId: parseInt(assigneeId),
+      assignedBy: currentTeamMember.id,
+      priority: assignmentPriority,
+      internalDeadline: assignmentDeadline || undefined,
+      notes: assignmentNote || undefined,
+    });
+  };
 
   if (!tender) return null;
 
@@ -722,6 +811,124 @@ export function TenderDetailModal({ tender, open, onClose, onViewCorrigendum }: 
                           <>
                             <PenLine className="w-4 h-4 mr-2" />
                             Apply Override
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              </>
+            )}
+
+            {tender.eligibilityStatus === "eligible" && teamMembers.length > 0 && currentTeamMember && 
+              (currentTeamMember.role === "admin" || currentTeamMember.role === "manager") && (
+              <>
+                <Separator />
+                <Collapsible open={showAssignPanel} onOpenChange={setShowAssignPanel}>
+                  <CollapsibleTrigger asChild>
+                    <Button 
+                      variant="outline" 
+                      className="w-full justify-between"
+                      data-testid="button-toggle-assign"
+                    >
+                      <span className="flex items-center gap-2">
+                        <UserPlus className="w-4 h-4" />
+                        Assign to Team
+                      </span>
+                      <ChevronDown className={`w-4 h-4 transition-transform ${showAssignPanel ? 'rotate-180' : ''}`} />
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="pt-4 space-y-4">
+                    <div className="text-sm text-muted-foreground">
+                      Assign this tender to a team member for bid preparation.
+                    </div>
+                    
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-sm font-medium text-foreground block mb-1.5">
+                          Assign To *
+                        </label>
+                        <Select value={assigneeId} onValueChange={setAssigneeId}>
+                          <SelectTrigger data-testid="select-assignee">
+                            <SelectValue placeholder="Select team member..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {teamMembers.filter(m => m.isActive).map((member) => (
+                              <SelectItem key={member.id} value={member.id.toString()}>
+                                <span className="flex items-center gap-2">
+                                  <Users className="w-4 h-4" />
+                                  {member.fullName}
+                                  <Badge variant="outline" className="text-[10px] ml-1">
+                                    {member.role}
+                                  </Badge>
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div>
+                        <label className="text-sm font-medium text-foreground block mb-1.5">
+                          Priority
+                        </label>
+                        <Select value={assignmentPriority} onValueChange={setAssignmentPriority}>
+                          <SelectTrigger data-testid="select-priority">
+                            <SelectValue placeholder="Select priority..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="low">Low</SelectItem>
+                            <SelectItem value="normal">Normal</SelectItem>
+                            <SelectItem value="high">High</SelectItem>
+                            <SelectItem value="urgent">Urgent</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div>
+                        <label className="text-sm font-medium text-foreground block mb-1.5">
+                          Internal Deadline (Optional)
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-4 h-4 text-muted-foreground" />
+                          <Input
+                            type="date"
+                            value={assignmentDeadline}
+                            onChange={(e) => setAssignmentDeadline(e.target.value)}
+                            data-testid="input-internal-deadline"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-sm font-medium text-foreground block mb-1.5">
+                          Notes (Optional)
+                        </label>
+                        <Textarea
+                          placeholder="Add any notes for the assignee..."
+                          value={assignmentNote}
+                          onChange={(e) => setAssignmentNote(e.target.value)}
+                          className="resize-none"
+                          rows={2}
+                          data-testid="textarea-assignment-note"
+                        />
+                      </div>
+
+                      <Button
+                        onClick={handleAssign}
+                        disabled={!assigneeId || assignMutation.isPending}
+                        className="w-full"
+                        data-testid="button-assign-tender"
+                      >
+                        {assignMutation.isPending ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Assigning...
+                          </>
+                        ) : (
+                          <>
+                            <UserPlus className="w-4 h-4 mr-2" />
+                            Assign Tender
                           </>
                         )}
                       </Button>

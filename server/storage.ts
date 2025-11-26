@@ -104,6 +104,7 @@ export interface IStorage {
   getTeamMembers(): Promise<TeamMember[]>;
   getTeamMemberById(id: number): Promise<TeamMember | undefined>;
   getTeamMemberByUsername(username: string): Promise<TeamMember | undefined>;
+  getTeamMemberByEmail(email: string): Promise<TeamMember | undefined>;
   createTeamMember(member: InsertTeamMember): Promise<TeamMember>;
   updateTeamMember(id: number, member: Partial<InsertTeamMember>): Promise<TeamMember | undefined>;
   deleteTeamMember(id: number): Promise<void>;
@@ -590,6 +591,11 @@ export class DatabaseStorage implements IStorage {
 
   async getTeamMemberByUsername(username: string): Promise<TeamMember | undefined> {
     const [member] = await db.select().from(teamMembers).where(eq(teamMembers.username, username));
+    return member;
+  }
+
+  async getTeamMemberByEmail(email: string): Promise<TeamMember | undefined> {
+    const [member] = await db.select().from(teamMembers).where(eq(teamMembers.email, email));
     return member;
   }
 

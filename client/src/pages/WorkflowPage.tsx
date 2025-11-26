@@ -90,6 +90,12 @@ export default function WorkflowPage() {
     queryKey: ["/api/team-members"],
   });
 
+  // Get the current authenticated user's team member record
+  const { data: currentTeamMember } = useQuery<Omit<TeamMember, "password">>({
+    queryKey: ["/api/me/team-member"],
+    retry: false,
+  });
+
   const { data: workflowStats } = useQuery<{
     assigned: number;
     inProgress: number;
@@ -177,11 +183,10 @@ export default function WorkflowPage() {
 
   const confirmStageUpdate = () => {
     if (!selectedAssignment || !newStage) return;
-    const currentUser = teamMembers.find(m => m.role === "admin" || m.role === "manager") || teamMembers[0];
-    if (!currentUser) {
+    if (!currentTeamMember) {
       toast({
         title: "Error",
-        description: "No team member found to record the change",
+        description: "You are not registered as a team member. Please contact an admin.",
         variant: "destructive",
       });
       return;
@@ -189,18 +194,17 @@ export default function WorkflowPage() {
     updateStageMutation.mutate({
       id: selectedAssignment.id,
       stage: newStage,
-      changedBy: currentUser.id,
+      changedBy: currentTeamMember.id,
       note: stageNote || undefined,
     });
   };
 
   const confirmSubmission = () => {
     if (!selectedAssignment || !submissionBudget) return;
-    const currentUser = teamMembers.find(m => m.role === "admin" || m.role === "manager") || teamMembers[0];
-    if (!currentUser) {
+    if (!currentTeamMember) {
       toast({
         title: "Error",
-        description: "No team member found to record the submission",
+        description: "You are not registered as a team member. Please contact an admin.",
         variant: "destructive",
       });
       return;
@@ -208,7 +212,7 @@ export default function WorkflowPage() {
     submitMutation.mutate({
       tenderId: selectedAssignment.tenderId,
       assignmentId: selectedAssignment.id,
-      submittedBy: currentUser.id,
+      submittedBy: currentTeamMember.id,
       submittedBudget: submissionBudget,
       submissionDate: new Date().toISOString(),
       portalReferenceNumber: submissionRef || undefined,
