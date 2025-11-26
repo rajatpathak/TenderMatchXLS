@@ -144,20 +144,22 @@ export function TenderDetailModal({ tender, open, onClose, onViewCorrigendum }: 
 
   if (!tender) return null;
 
+  const matchPct = tender.matchPercentage ?? 0;
+
   const getMatchColor = () => {
     if (tender.isMsmeExempted || tender.isStartupExempted) {
       return "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-200 dark:border-purple-800";
     }
-    if (tender.matchPercentage >= 100) {
+    if (matchPct >= 100) {
       return "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800";
     }
-    if (tender.matchPercentage >= 75) {
+    if (matchPct >= 75) {
       return "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800";
     }
-    if (tender.matchPercentage >= 50) {
+    if (matchPct >= 50) {
       return "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800";
     }
-    if (tender.matchPercentage >= 25) {
+    if (matchPct >= 25) {
       return "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-800";
     }
     return "bg-red-500/10 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800";
@@ -167,10 +169,10 @@ export function TenderDetailModal({ tender, open, onClose, onViewCorrigendum }: 
     if (tender.isMsmeExempted || tender.isStartupExempted) {
       return <Star className="w-4 h-4" />;
     }
-    if (tender.matchPercentage >= 75) {
+    if (matchPct >= 75) {
       return <CheckCircle2 className="w-4 h-4" />;
     }
-    if (tender.matchPercentage >= 50) {
+    if (matchPct >= 50) {
       return <TrendingUp className="w-4 h-4" />;
     }
     return <AlertCircle className="w-4 h-4" />;
@@ -186,6 +188,21 @@ export function TenderDetailModal({ tender, open, onClose, onViewCorrigendum }: 
       return `₹${(num / 100000).toFixed(2)} Lakh`;
     }
     return `₹${num.toLocaleString('en-IN')}`;
+  };
+
+  const formatTurnover = (value: string | number | null | undefined) => {
+    if (!value) return "Not specified";
+    const croreValue = typeof value === 'string' ? parseFloat(value) : value;
+    if (isNaN(croreValue) || croreValue === 0) return "Not specified";
+    
+    if (croreValue >= 1) {
+      const formatted = croreValue % 1 === 0 ? croreValue.toString() : croreValue.toFixed(2);
+      return `${formatted} Crore`;
+    } else {
+      const lakhValue = croreValue * 100;
+      const formatted = lakhValue % 1 === 0 ? lakhValue.toString() : lakhValue.toFixed(2);
+      return `${formatted} Lakh`;
+    }
   };
 
   const formatDate = (date: Date | string | null | undefined) => {
@@ -262,7 +279,7 @@ export function TenderDetailModal({ tender, open, onClose, onViewCorrigendum }: 
               {getMatchIcon()}
               {tender.isMsmeExempted || tender.isStartupExempted 
                 ? "MSME Exempted" 
-                : `${tender.matchPercentage}% Match`}
+                : `${matchPct}% Match`}
             </Badge>
           </div>
         </DialogHeader>
@@ -414,7 +431,7 @@ export function TenderDetailModal({ tender, open, onClose, onViewCorrigendum }: 
                   <TrendingUp className="w-4 h-4 text-muted-foreground mt-0.5" />
                   <div>
                     <div className="text-xs text-muted-foreground">Turnover Requirement</div>
-                    <div className="text-sm font-medium text-foreground">{formatCurrency(tender.turnoverRequirement)}</div>
+                    <div className="text-sm font-medium text-foreground">{formatTurnover(tender.turnoverRequirement)}</div>
                   </div>
                 </div>
               </div>
