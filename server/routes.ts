@@ -666,6 +666,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Fix dates by re-parsing from raw_data (DD-MM-YYYY format)
+  app.post('/api/tenders/fix-dates', isAuthenticated, async (req, res) => {
+    try {
+      const allTenders = await storage.getTenders();
+      let fixed = 0;
+      let errors = 0;
+      
+      for (const tender of allTenders) {
+        try {
+          if (!tender.rawData) continue;
+          
+          const rawData = typeof tender.rawData === 'string' 
+            ? JSON.parse(tender.rawData) 
+            : tender.rawData;
+          
+          // Find deadline field in raw data
+          const deadlineValue = rawData['Deadline'] || rawData['deadline'] || 
+                               rawData['Submission Deadline'] || rawData['submissiondeadline'] ||
+                               rawData['Due Date'] || rawData['duedate'] ||
+                               rawData['Bid End Date'] || rawData['bidenddate'] ||
+                               rawData['Last Date'] || rawData['lastdate'];
+          
+          if (deadlineValue) {
+            const newDeadline = parseExcelDate(deadlineValue);
+            
+            if (newDeadline && tender.submissionDeadline) {
+              const existingDate = new Date(tender.submissionDeadline);
+              
+              // Check if dates are different (day and month might be swapped)
+              if (newDeadline.getTime() !== existingDate.getTime()) {
+                await storage.updateTender(tender.id, {
+                  submissionDeadline: newDeadline,
+                });
+                fixed++;
+              }
+            }
+          }
+        } catch (err) {
+          errors++;
+          console.error(`Error fixing date for tender ${tender.t247Id}:`, err);
+        }
+      }
+      
+      // After fixing dates, update missed status
+      await storage.updateMissedDeadlines();
+      
+      res.json({ 
+        success: true, 
+        fixed,
+        errors,
+        total: allTenders.length,
+        message: `Fixed ${fixed} tender dates (${errors} errors)` 
+      });
+    } catch (error) {
+      console.error("Error fixing dates:", error);
+      res.status(500).json({ message: "Failed to fix dates" });
+    }
+  });
+
   // Stats endpoint
   app.get('/api/stats', isAuthenticated, async (req, res) => {
     try {

@@ -40,7 +40,8 @@ import {
   Plus,
   X,
   Trash2,
-  RefreshCw
+  RefreshCw,
+  Calendar
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -196,20 +197,41 @@ export default function Settings() {
     },
     onSuccess: (data: any) => {
       toast({
-        title: "Re-analysis Complete",
-        description: data.message || `Successfully re-analyzed ${data.updated} tenders.`,
+        title: "Re-analysis Started",
+        description: data.message || "Re-analysis is running in the background. Check progress in the sidebar.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/reanalyze-status"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to re-analyze tenders",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const fixDatesMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("POST", "/api/tenders/fix-dates");
+    },
+    onSuccess: (data: any) => {
+      toast({
+        title: "Dates Fixed",
+        description: data.message || `Fixed ${data.fixed} tender dates.`,
       });
       queryClient.invalidateQueries({ queryKey: ["/api/tenders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tenders/status", "eligible"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tenders/status", "not_eligible"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tenders/status", "not_relevant"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tenders/status", "manual_review"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders/status", "missed"] });
       queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
     },
     onError: (error: Error) => {
       toast({
         title: "Error",
-        description: error.message || "Failed to re-analyze tenders",
+        description: error.message || "Failed to fix dates",
         variant: "destructive",
       });
     },
@@ -521,6 +543,44 @@ export default function Settings() {
                   <>
                     <RefreshCw className="w-4 h-4 mr-2" />
                     Re-analyze All Tenders
+                  </>
+                )}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Calendar className="w-5 h-5" />
+              Fix Date Formats
+            </CardTitle>
+            <CardDescription>
+              Re-parse all tender dates from the original Excel data using DD-MM-YYYY format.
+              Use this if dates appear to have day and month swapped.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                This will fix all tender dates that were incorrectly parsed. 
+                After fixing, the "Missed Tenders" category will be updated automatically.
+              </p>
+              <Button
+                onClick={() => fixDatesMutation.mutate()}
+                disabled={fixDatesMutation.isPending}
+                data-testid="button-fix-dates"
+              >
+                {fixDatesMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Fixing Dates...
+                  </>
+                ) : (
+                  <>
+                    <Calendar className="w-4 h-4 mr-2" />
+                    Fix All Dates
                   </>
                 )}
               </Button>
