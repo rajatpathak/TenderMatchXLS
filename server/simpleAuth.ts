@@ -155,6 +155,20 @@ export async function setupAuth(app: Express) {
         email: config.email,
         role: 'admin',
       };
+      
+      // Log admin login
+      try {
+        await storage.createAuditLog({
+          action: 'login',
+          category: 'auth',
+          userId: config.id,
+          userName: username,
+          ipAddress: req.ip || 'unknown',
+        });
+      } catch (e) {
+        console.error("Failed to log admin login:", e);
+      }
+      
       res.json({ 
         success: true, 
         user: {
@@ -188,6 +202,20 @@ export async function setupAuth(app: Express) {
           role: teamMember.role,
           teamMemberId: teamMember.id,
         };
+        
+        // Log team member login
+        try {
+          await storage.createAuditLog({
+            action: 'login',
+            category: 'auth',
+            userId: `team_${teamMember.id}`,
+            userName: username,
+            ipAddress: req.ip || 'unknown',
+          });
+        } catch (e) {
+          console.error("Failed to log team member login:", e);
+        }
+        
         res.json({ 
           success: true, 
           user: {
@@ -208,7 +236,24 @@ export async function setupAuth(app: Express) {
   });
 
   // Logout endpoint
-  app.post("/api/logout", (req, res) => {
+  app.post("/api/logout", async (req, res) => {
+    const user = (req.session as any)?.user;
+    
+    // Log logout
+    if (user) {
+      try {
+        await storage.createAuditLog({
+          action: 'logout',
+          category: 'auth',
+          userId: user.id,
+          userName: user.username || user.email,
+          ipAddress: req.ip || 'unknown',
+        });
+      } catch (e) {
+        console.error("Failed to log logout:", e);
+      }
+    }
+    
     req.session.destroy((err) => {
       if (err) {
         console.error("Session destroy error:", err);
