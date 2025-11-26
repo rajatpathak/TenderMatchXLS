@@ -33,6 +33,8 @@ import {
   Users,
   Workflow,
   Send,
+  ClipboardList,
+  Briefcase,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest } from "@/lib/queryClient";
@@ -140,11 +142,28 @@ export function AppSidebar() {
 
   const workflowItems = [
     {
-      title: "Bidding Workflow",
+      title: "My Work",
+      url: "/my-work",
+      icon: Briefcase,
+      badge: undefined,
+      color: "text-blue-500",
+      description: "Your assigned tasks",
+    },
+    {
+      title: "Assignments Hub",
+      url: "/assignments",
+      icon: ClipboardList,
+      badge: (workflowStats?.assigned || 0) + (workflowStats?.inProgress || 0) + (workflowStats?.readyForReview || 0),
+      color: "text-indigo-500",
+      description: "Manage all assignments",
+    },
+    {
+      title: "Workflow Overview",
       url: "/workflow",
       icon: Workflow,
-      badge: (workflowStats?.assigned || 0) + (workflowStats?.inProgress || 0) + (workflowStats?.readyForReview || 0),
-      color: "text-blue-500",
+      badge: undefined,
+      color: "text-purple-500",
+      description: "Full workflow view",
     },
     {
       title: "Submitted Tenders",
@@ -152,13 +171,15 @@ export function AppSidebar() {
       icon: Send,
       badge: workflowStats?.submitted,
       color: "text-emerald-500",
+      description: "Completed bids",
     },
     {
       title: "Team Management",
       url: "/team",
       icon: Users,
       badge: undefined,
-      color: "text-indigo-500",
+      color: "text-amber-500",
+      description: "Manage team members",
     },
   ];
 

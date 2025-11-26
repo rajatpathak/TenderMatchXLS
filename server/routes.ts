@@ -1568,11 +1568,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Tender Assignment Routes
   app.get('/api/assignments', isAuthenticated, async (req, res) => {
     try {
-      const assignments = await storage.getTenderAssignments();
+      const { stage, priority, assignee } = req.query;
+      let assignments = await storage.getTenderAssignments();
+      
+      // Apply filters if provided
+      if (stage && stage !== 'all') {
+        assignments = assignments.filter(a => a.currentStage === stage);
+      }
+      if (priority && priority !== 'all') {
+        assignments = assignments.filter(a => a.priority === priority);
+      }
+      if (assignee && assignee !== 'all') {
+        assignments = assignments.filter(a => a.assignedTo === parseInt(assignee as string));
+      }
+      
       res.json(assignments);
     } catch (error) {
       console.error("Error fetching assignments:", error);
       res.status(500).json({ message: "Failed to fetch assignments" });
+    }
+  });
+
+  // Get assignments for current logged-in user (My Work)
+  app.get('/api/assignments/my', isAuthenticated, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      if (!user?.email) {
+        return res.status(400).json({ message: "User email not found" });
+      }
+      
+      // Find the team member by email
+      const teamMember = await storage.getTeamMemberByEmail(user.email);
+      if (!teamMember) {
+        return res.json([]); // Return empty if user is not a team member
+      }
+      
+      const assignments = await storage.getAssignmentsByUserId(teamMember.id);
+      res.json(assignments);
+    } catch (error) {
+      console.error("Error fetching my assignments:", error);
+      res.status(500).json({ message: "Failed to fetch my assignments" });
     }
   });
 

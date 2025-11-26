@@ -19,6 +19,8 @@ import UploadPage from "@/pages/UploadPage";
 import TeamManagement from "@/pages/TeamManagement";
 import WorkflowPage from "@/pages/WorkflowPage";
 import SubmittedTenders from "@/pages/SubmittedTenders";
+import AssignmentsHub from "@/pages/AssignmentsHub";
+import MyWork from "@/pages/MyWork";
 import { 
   EligibleTendersPage, 
   NotRelevantTendersPage, 
@@ -85,6 +87,8 @@ function Router() {
         <Route path="/corrigendum" component={Corrigendum} />
         <Route path="/unable-to-analyse" component={UnableToAnalyse} />
         <Route path="/workflow" component={WorkflowPage} />
+        <Route path="/assignments" component={AssignmentsHub} />
+        <Route path="/my-work" component={MyWork} />
         <Route path="/submissions" component={SubmittedTenders} />
         <Route path="/team" component={TeamManagement} />
         <Route path="/settings" component={Settings} />
