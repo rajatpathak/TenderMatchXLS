@@ -108,6 +108,27 @@ function getColumnByLetter(sheet: XLSX.WorkSheet, rowIdx: number, colLetter: str
   return cell ? cell.v : null;
 }
 
+function parseLakhToCrore(value: any): number | null {
+  if (!value) return null;
+  const str = String(value).toLowerCase().trim();
+  
+  // Match patterns like "15000 Lakh(s)", "15000 lakh", "15000L"
+  const lakhMatch = str.match(/(\d+(?:\.\d+)?)\s*(?:lakh|lac|l(?:acs)?)/i);
+  if (lakhMatch) {
+    const lakhValue = parseFloat(lakhMatch[1]);
+    // Convert Lakh to Crore: 1 Crore = 100 Lakh
+    return lakhValue / 100;
+  }
+  
+  // Try to parse as plain number (assume it's already in appropriate unit)
+  const numMatch = str.match(/(\d+(?:\.\d+)?)/);
+  if (numMatch) {
+    return parseFloat(numMatch[1]);
+  }
+  
+  return null;
+}
+
 function parseTenderFromRow(row: any, tenderType: 'gem' | 'non_gem', sheet?: XLSX.WorkSheet, rowIndex?: number): TenderWithExcelFlags {
   const t247Id = findColumn(row, 't247id', 'id', 'tenderid', 'tenderno', 'tendernumber', 'refno', 'referenceno') || `AUTO-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   
@@ -125,9 +146,33 @@ function parseTenderFromRow(row: any, tenderType: 'gem' | 'non_gem', sheet?: XLS
     fullTitle = `[${referenceNo}]`;
   }
   
-  // Get MSME/Startup exemption directly from Excel columns
-  const msmeExemptionValue = findColumn(row, 'msmeexemption', 'msme', 'msmeexempted');
-  const startupExemptionValue = findColumn(row, 'startupexemption', 'startup', 'startupexempted');
+  // Get MSME/Startup exemption from specific columns based on tender type
+  let msmeExemptionValue = null;
+  let startupExemptionValue = null;
+  
+  if (sheet && rowIndex !== undefined && tenderType === 'gem') {
+    // GEM: Column K for MSME Exemption, Column L for Startup Exemption
+    msmeExemptionValue = getColumnByLetter(sheet, rowIndex, 'K');
+    startupExemptionValue = getColumnByLetter(sheet, rowIndex, 'L');
+  } else {
+    // Fallback to name-based lookup
+    msmeExemptionValue = findColumn(row, 'msmeexemption', 'msme', 'msmeexempted');
+    startupExemptionValue = findColumn(row, 'startupexemption', 'startup', 'startupexempted');
+  }
+  
+  // Get turnover requirement based on tender type
+  let turnoverRequirement: string | null = null;
+  if (sheet && rowIndex !== undefined && tenderType === 'gem') {
+    // GEM: Column S for "Minimum Average Annual Turnover of the bidder" in Lakh format
+    const turnoverRaw = getColumnByLetter(sheet, rowIndex, 'S');
+    const turnoverInCrore = parseLakhToCrore(turnoverRaw);
+    if (turnoverInCrore !== null) {
+      turnoverRequirement = turnoverInCrore.toString();
+    }
+  } else {
+    // Non-GEM or fallback: use name-based lookup
+    turnoverRequirement = parseNumber(findColumn(row, 'turnover', 'turnoverrequirement', 'annualturnover', 'minturnover'))?.toString() || null;
+  }
   
   // Get eligibility criteria - use column position based on tender type
   // Non-GEM: Column N, GEM: Column AU
@@ -155,7 +200,7 @@ function parseTenderFromRow(row: any, tenderType: 'gem' | 'non_gem', sheet?: XLS
     organization: findColumn(row, 'organization', 'org', 'company', 'buyer', 'buyerorg') || null,
     estimatedValue: parseNumber(findColumn(row, 'estimatedvalue', 'value', 'amount', 'budget', 'cost', 'estimatedcost', 'tendervalue'))?.toString() || null,
     emdAmount: parseNumber(findColumn(row, 'emd', 'emdamount', 'earnestmoney', 'earnestmoneydeposit', 'emdr', 'bidsecrurity'))?.toString() || null,
-    turnoverRequirement: parseNumber(findColumn(row, 'turnover', 'turnoverrequirement', 'annualturnover', 'minturnover'))?.toString() || null,
+    turnoverRequirement,
     publishDate: parseExcelDate(findColumn(row, 'publishdate', 'publishedon', 'startdate', 'bidstartdate', 'publicationdate')),
     submissionDeadline: parseExcelDate(findColumn(row, 'submissiondeadline', 'deadline', 'duedate', 'bidenddate', 'closingdate', 'lastdate', 'bidsubmissionenddate')),
     openingDate: parseExcelDate(findColumn(row, 'openingdate', 'bidopeningdate', 'opendate', 'bidopeningdatetime')),

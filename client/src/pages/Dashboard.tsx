@@ -31,9 +31,24 @@ import {
   Filter,
   X,
   Trash2,
-  Loader2
+  Loader2,
+  Smartphone,
+  Globe,
+  HardDrive,
+  Users,
+  Layers,
+  Code
 } from "lucide-react";
 import type { Tender } from "@shared/schema";
+
+const projectTypeFilters = [
+  { value: "all", label: "All", icon: Layers },
+  { value: "software", label: "Software", icon: Code },
+  { value: "mobile", label: "Mobile", icon: Smartphone },
+  { value: "website", label: "Website", icon: Globe },
+  { value: "hardware", label: "Hardware", icon: HardDrive },
+  { value: "manpower", label: "Manpower", icon: Users },
+];
 
 interface DashboardStats {
   total: number;
@@ -49,6 +64,7 @@ export default function Dashboard() {
   const [selectedTender, setSelectedTender] = useState<Tender | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showFilters, setShowFilters] = useState(true);
+  const [projectTypeFilter, setProjectTypeFilter] = useState("all");
   const { toast } = useToast();
 
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
@@ -93,9 +109,53 @@ export default function Dashboard() {
         if (!matchesSearch) return false;
       }
 
+      // Project type filter based on title/eligibility keywords
+      if (projectTypeFilter !== "all") {
+        const searchText = `${tender.title || ''} ${tender.eligibilityCriteria || ''}`.toLowerCase();
+        const tenderTags: string[] = tender.tags || [];
+        
+        switch (projectTypeFilter) {
+          case "software":
+            if (!searchText.includes("software") && !searchText.includes("application") && 
+                !searchText.includes("development") && !searchText.includes("it project") &&
+                !tenderTags.some((tag: string) => tag.toLowerCase().includes("software"))) {
+              return false;
+            }
+            break;
+          case "mobile":
+            if (!searchText.includes("mobile") && !searchText.includes("app") && 
+                !tenderTags.some((tag: string) => tag.toLowerCase().includes("mobile"))) {
+              return false;
+            }
+            break;
+          case "website":
+            if (!searchText.includes("website") && !searchText.includes("web") && 
+                !searchText.includes("portal") &&
+                !tenderTags.some((tag: string) => tag.toLowerCase().includes("website"))) {
+              return false;
+            }
+            break;
+          case "hardware":
+            if (!searchText.includes("hardware") && !searchText.includes("equipment") && 
+                !searchText.includes("server") && !searchText.includes("computer") &&
+                !tenderTags.some((tag: string) => tag.toLowerCase().includes("hardware"))) {
+              return false;
+            }
+            break;
+          case "manpower":
+            if (!searchText.includes("manpower") && !searchText.includes("resource") && 
+                !searchText.includes("personnel") && !searchText.includes("staff") &&
+                !searchText.includes("deployment") &&
+                !tenderTags.some((tag: string) => tag.toLowerCase().includes("manpower"))) {
+              return false;
+            }
+            break;
+        }
+      }
+
       if (filters.matchRange[0] > 0 || filters.matchRange[1] < 100) {
-        if (tender.matchPercentage < filters.matchRange[0] || 
-            tender.matchPercentage > filters.matchRange[1]) {
+        const matchPct = tender.matchPercentage ?? 0;
+        if (matchPct < filters.matchRange[0] || matchPct > filters.matchRange[1]) {
           return false;
         }
       }
@@ -135,7 +195,7 @@ export default function Dashboard() {
     }).sort((a, b) => {
       return (b.matchPercentage || 0) - (a.matchPercentage || 0);
     });
-  }, [tenders, filters, searchQuery]);
+  }, [tenders, filters, searchQuery, projectTypeFilter]);
 
   const statCards = [
     {
@@ -296,8 +356,35 @@ export default function Dashboard() {
                 <Filter className="w-4 h-4" />
               </Button>
             </div>
+            
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium text-muted-foreground mr-2">Project Type:</span>
+              {projectTypeFilters.map((filter) => {
+                const Icon = filter.icon;
+                const isActive = projectTypeFilter === filter.value;
+                return (
+                  <Button
+                    key={filter.value}
+                    variant={isActive ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setProjectTypeFilter(filter.value)}
+                    className="gap-1.5"
+                    data-testid={`filter-project-${filter.value}`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    {filter.label}
+                  </Button>
+                );
+              })}
+            </div>
+            
             <div className="mt-2 text-sm text-muted-foreground">
               Showing {filteredTenders.length} of {tenders.length} tenders
+              {projectTypeFilter !== "all" && (
+                <span className="ml-1">
+                  (filtered by {projectTypeFilters.find(f => f.value === projectTypeFilter)?.label})
+                </span>
+              )}
             </div>
           </div>
 
