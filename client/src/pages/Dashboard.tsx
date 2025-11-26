@@ -433,6 +433,8 @@ export default function Dashboard() {
                     key={tender.id}
                     tender={tender}
                     onClick={() => setSelectedTender(tender)}
+                    showAssignButton={tender.eligibilityStatus === 'eligible'}
+                    onAssign={() => setTenderToAssign(tender)}
                   />
                 ))}
               </div>
@@ -450,6 +452,12 @@ export default function Dashboard() {
       <UploadModal
         open={showUploadModal}
         onClose={() => setShowUploadModal(false)}
+      />
+
+      <AssignTenderDialog
+        tender={tenderToAssign}
+        open={!!tenderToAssign}
+        onClose={() => setTenderToAssign(null)}
       />
     </div>
   );
