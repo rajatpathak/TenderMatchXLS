@@ -138,9 +138,14 @@ export const tenders = pgTable("tenders", {
   tags: text("tags").array().default(sql`ARRAY[]::text[]`),
   analysisStatus: varchar("analysis_status").default("analyzed"), // 'analyzed', 'unable_to_analyze'
   
-  // Eligibility status: 'eligible', 'not_eligible', 'not_relevant', 'manual_review'
+  // Eligibility status: 'eligible', 'not_eligible', 'not_relevant', 'manual_review', 'missed'
   eligibilityStatus: varchar("eligibility_status").default("eligible"),
   notRelevantKeyword: varchar("not_relevant_keyword"), // The keyword that matched if marked not relevant
+  
+  // Missed deadline tracking
+  isMissed: boolean("is_missed").default(false), // Whether deadline has passed
+  previousEligibilityStatus: varchar("previous_eligibility_status"), // Status before being marked as missed
+  missedAt: timestamp("missed_at"), // When it was marked as missed
   
   // Manual override fields
   isManualOverride: boolean("is_manual_override").default(false),
