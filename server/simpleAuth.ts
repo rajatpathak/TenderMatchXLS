@@ -1,6 +1,7 @@
 import session from "express-session";
 import type { Express, RequestHandler } from "express";
 import connectPg from "connect-pg-simple";
+import { storage } from "./storage";
 
 const ADMIN_USER = {
   id: "admin",
@@ -10,6 +11,23 @@ const ADMIN_USER = {
   lastName: "User",
   email: "admin@tendermatch.com",
 };
+
+async function ensureAdminUserExists() {
+  try {
+    const existingUser = await storage.getUser(ADMIN_USER.id);
+    if (!existingUser) {
+      await storage.upsertUser({
+        id: ADMIN_USER.id,
+        email: ADMIN_USER.email,
+        firstName: ADMIN_USER.firstName,
+        lastName: ADMIN_USER.lastName,
+      });
+      console.log("Admin user created in database");
+    }
+  } catch (error) {
+    console.error("Error ensuring admin user exists:", error);
+  }
+}
 
 export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 1 week
@@ -38,10 +56,13 @@ export async function setupAuth(app: Express) {
   app.use(getSession());
 
   // Login endpoint
-  app.post("/api/login", (req, res) => {
+  app.post("/api/login", async (req, res) => {
     const { username, password } = req.body;
     
     if (username === ADMIN_USER.username && password === ADMIN_USER.password) {
+      // Ensure admin user exists in database for foreign key references
+      await ensureAdminUserExists();
+      
       (req.session as any).user = {
         id: ADMIN_USER.id,
         username: ADMIN_USER.username,
