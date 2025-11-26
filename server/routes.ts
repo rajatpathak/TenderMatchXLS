@@ -109,25 +109,23 @@ function getColumnByLetter(sheet: XLSX.WorkSheet, rowIdx: number, colLetter: str
   return cell ? cell.v : null;
 }
 
-function parseLakhToCrore(value: any): number | null {
+function parseLakhValue(value: any): number | null {
   if (!value) return null;
   const str = String(value).toLowerCase().trim();
   
-  // Match patterns like "15000 Lakh(s)", "15000 lakh", "15000 lakhs", "15000L", "15000 Lac(s)"
+  // Match patterns like "38 Lakh(s)", "15000 lakh", "15000 lakhs", "38 Lac(s)"
   // The pattern handles: lakh, lakhs, lakh(s), lac, lacs, lac(s)
   const lakhMatch = str.match(/(\d+(?:,\d+)*(?:\.\d+)?)\s*(?:lakh(?:s|\(s\))?|lac(?:s|\(s\))?)/i);
   if (lakhMatch) {
     // Remove commas from number before parsing
-    const lakhValue = parseFloat(lakhMatch[1].replace(/,/g, ''));
-    // Convert Lakh to Crore: 1 Crore = 100 Lakh
-    // Example: 15000 Lakh = 150 Crore (15000 / 100 = 150)
-    return lakhValue / 100;
+    // Keep value in Lakhs - DO NOT convert to Crores
+    return parseFloat(lakhMatch[1].replace(/,/g, ''));
   }
   
-  // Try to parse as plain number (assume it's already in Crore or needs no conversion)
+  // Try to parse as plain number (assume it's in Lakhs)
   const numMatch = str.match(/(\d+(?:,\d+)*(?:\.\d+)?)/);
   if (numMatch) {
-    // Remove commas and return as-is (assumed to be in Crore already)
+    // Remove commas and return as-is (assumed to be in Lakhs)
     return parseFloat(numMatch[1].replace(/,/g, ''));
   }
   
@@ -171,10 +169,11 @@ function parseTenderFromRow(row: any, tenderType: 'gem' | 'non_gem', sheet?: XLS
   
   if (sheet && rowIndex !== undefined && tenderType === 'gem') {
     // GEM: Column S for "Minimum Average Annual Turnover of the bidder" in Lakh format
+    // Store value in Lakhs exactly as in Excel
     const turnoverRaw = getColumnByLetter(sheet, rowIndex, 'S');
-    const turnoverInCrore = parseLakhToCrore(turnoverRaw);
-    if (turnoverInCrore !== null) {
-      turnoverRequirement = turnoverInCrore.toString();
+    const turnoverInLakhs = parseLakhValue(turnoverRaw);
+    if (turnoverInLakhs !== null) {
+      turnoverRequirement = turnoverInLakhs.toString();
     }
     
     // GEM: Column X for "Similar Category" (core service keywords)

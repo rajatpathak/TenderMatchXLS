@@ -103,8 +103,25 @@ function extractTurnoverRequirement(text: string): number | null {
   
   const lowerText = text.toLowerCase();
   
-  // Multiple patterns to catch various turnover formats
-  const patterns = [
+  // Check for lakh amounts first (return value in Lakhs)
+  const lakhPatterns = [
+    /rs\.?\s*(\d+(?:\.\d+)?)\s*(?:lakh|lac|l(?:acs)?)/gi,
+    /(?:at\s*least|minimum)\s*(?:rs\.?\s*)?(\d+(?:\.\d+)?)\s*(?:lakh|lac|l(?:acs)?)/gi,
+    /turnover[^.]*?(?:rs\.?\s*)?(\d+(?:\.\d+)?)\s*(?:lakh|lac|l(?:acs)?)/gi,
+  ];
+  
+  for (const pattern of lakhPatterns) {
+    const matches = [...text.matchAll(pattern)];
+    if (matches.length > 0) {
+      const amount = parseFloat(matches[0][1]);
+      if (amount > 0) {
+        return amount; // Keep in Lakhs - don't convert
+      }
+    }
+  }
+  
+  // Check for crore amounts (convert to Lakhs: 1 Crore = 100 Lakhs)
+  const crorePatterns = [
     // "Rs.10 Crores" or "Rs. 10 Crore" or "Rs 10 Crores"
     /rs\.?\s*(\d+(?:\.\d+)?)\s*(?:cr(?:ore)?s?)/gi,
     // "10 Crore" or "10 Crores" with context
@@ -119,29 +136,12 @@ function extractTurnoverRequirement(text: string): number | null {
     /(\d+(?:\.\d+)?)\s*(?:cr(?:ore)?s?)/gi,
   ];
   
-  for (const pattern of patterns) {
+  for (const pattern of crorePatterns) {
     const matches = [...text.matchAll(pattern)];
     if (matches.length > 0) {
       const amount = parseFloat(matches[0][1]);
       if (amount > 0 && amount < 10000) { // Reasonable range for crores
-        return amount;
-      }
-    }
-  }
-  
-  // Check for lakh amounts
-  const lakhPatterns = [
-    /rs\.?\s*(\d+(?:\.\d+)?)\s*(?:lakh|lac|l(?:acs)?)/gi,
-    /(?:at\s*least|minimum)\s*(?:rs\.?\s*)?(\d+(?:\.\d+)?)\s*(?:lakh|lac|l(?:acs)?)/gi,
-    /turnover[^.]*?(?:rs\.?\s*)?(\d+(?:\.\d+)?)\s*(?:lakh|lac|l(?:acs)?)/gi,
-  ];
-  
-  for (const pattern of lakhPatterns) {
-    const matches = [...text.matchAll(pattern)];
-    if (matches.length > 0) {
-      const amount = parseFloat(matches[0][1]);
-      if (amount > 0) {
-        return amount / 100; // Convert lakhs to crores
+        return amount * 100; // Convert Crores to Lakhs (1 Crore = 100 Lakhs)
       }
     }
   }
@@ -280,19 +280,21 @@ export function analyzeEligibility(
   // Detect tags based on project type keywords
   const tags = detectTags(eligibilityText, criteria);
   
-  // Extract turnover requirement - use Excel value (from Column S) if available, otherwise parse from text
+  // Extract turnover requirement in LAKHS
+  // Excel value (from Column S) is already in Lakhs, text parsing also returns Lakhs
   const excelTurnover = tender.turnoverRequirement ? parseFloat(String(tender.turnoverRequirement)) : null;
   const textTurnover = extractTurnoverRequirement(eligibilityText);
-  const requiredTurnover = excelTurnover !== null && !isNaN(excelTurnover) ? excelTurnover : textTurnover;
-  const companyTurnover = parseFloat(criteria.turnoverCr || "4");
+  const requiredTurnoverLakhs = excelTurnover !== null && !isNaN(excelTurnover) ? excelTurnover : textTurnover;
+  // Company turnover: criteria.turnoverCr is in Crores, convert to Lakhs (or use 400 Lakhs as default = 4 Crore)
+  const companyTurnoverLakhs = parseFloat(criteria.turnoverCr || "4") * 100; // 4 Crore = 400 Lakhs
   
-  // Determine if turnover requirement is met
+  // Determine if turnover requirement is met (all values in LAKHS)
   let turnoverMet = true;
-  if (requiredTurnover !== null && requiredTurnover > 0) {
+  if (requiredTurnoverLakhs !== null && requiredTurnoverLakhs > 0) {
     if (isMsmeExempted || isStartupExempted) {
       turnoverMet = true; // Exempted
-    } else if (companyTurnover >= requiredTurnover) {
-      turnoverMet = true;
+    } else if (companyTurnoverLakhs >= requiredTurnoverLakhs) {
+      turnoverMet = true; // Company meets requirement (e.g., 400 >= 38)
     } else {
       turnoverMet = false; // NOT ELIGIBLE - company doesn't meet turnover requirement
     }
@@ -306,9 +308,9 @@ export function analyzeEligibility(
   totalCriteria += 50;
   if (isMsmeExempted || isStartupExempted) {
     matchScore += 50; // Full score if exempted
-  } else if (requiredTurnover === null) {
+  } else if (requiredTurnoverLakhs === null) {
     matchScore += 40; // Good score if no explicit requirement found
-  } else if (companyTurnover >= requiredTurnover) {
+  } else if (companyTurnoverLakhs >= requiredTurnoverLakhs) {
     matchScore += 50; // Full score if meets requirement
   } else {
     // Zero score if turnover requirement is not met - this is critical
@@ -365,7 +367,7 @@ export function analyzeEligibility(
   let eligibilityStatus: EligibilityStatus = "eligible";
   
   // If turnover requirement exists and company doesn't meet it (and no exemption), mark as NOT ELIGIBLE
-  if (!turnoverMet && requiredTurnover !== null) {
+  if (!turnoverMet && requiredTurnoverLakhs !== null) {
     analysisStatus = "not_eligible";
     eligibilityStatus = "not_eligible";
     matchPercentage = Math.min(matchPercentage, 40); // Cap at 40% for not eligible
@@ -379,7 +381,7 @@ export function analyzeEligibility(
     analysisStatus,
     eligibilityStatus,
     notRelevantKeyword: null,
-    turnoverRequired: requiredTurnover,
+    turnoverRequired: requiredTurnoverLakhs, // Now in Lakhs
     turnoverMet,
   };
 }

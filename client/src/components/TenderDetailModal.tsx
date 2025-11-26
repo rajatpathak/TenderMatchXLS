@@ -192,17 +192,12 @@ export function TenderDetailModal({ tender, open, onClose, onViewCorrigendum }: 
 
   const formatTurnover = (value: string | number | null | undefined) => {
     if (!value) return "Not specified";
-    const croreValue = typeof value === 'string' ? parseFloat(value) : value;
-    if (isNaN(croreValue) || croreValue === 0) return "Not specified";
+    const lakhValue = typeof value === 'string' ? parseFloat(value) : value;
+    if (isNaN(lakhValue) || lakhValue === 0) return "Not specified";
     
-    if (croreValue >= 1) {
-      const formatted = croreValue % 1 === 0 ? croreValue.toString() : croreValue.toFixed(2);
-      return `${formatted} Crore`;
-    } else {
-      const lakhValue = croreValue * 100;
-      const formatted = lakhValue % 1 === 0 ? lakhValue.toString() : lakhValue.toFixed(2);
-      return `${formatted} Lakh`;
-    }
+    // Display in Lakhs as stored (matching Excel format)
+    const formatted = lakhValue % 1 === 0 ? lakhValue.toString() : lakhValue.toFixed(2);
+    return `${formatted} Lakh`;
   };
 
   const formatDate = (date: Date | string | null | undefined) => {
