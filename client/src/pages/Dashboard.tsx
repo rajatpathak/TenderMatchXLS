@@ -19,6 +19,7 @@ import { TenderCard } from "@/components/TenderCard";
 import { FiltersPanel, getDefaultFilters, type FiltersState } from "@/components/FiltersPanel";
 import { TenderDetailModal } from "@/components/TenderDetailModal";
 import { UploadModal } from "@/components/UploadModal";
+import { AssignTenderDialog } from "@/components/AssignTenderDialog";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { 
@@ -62,6 +63,7 @@ export default function Dashboard() {
   const [filters, setFilters] = useState<FiltersState>(getDefaultFilters());
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTender, setSelectedTender] = useState<Tender | null>(null);
+  const [tenderToAssign, setTenderToAssign] = useState<Tender | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showFilters, setShowFilters] = useState(true);
   const [projectTypeFilter, setProjectTypeFilter] = useState("all");
