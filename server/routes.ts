@@ -1691,6 +1691,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         note: 'Tender assigned',
       });
 
+      // Log tender assignment
+      try {
+        const tender = await storage.getTenderById(tenderId);
+        await storage.createAuditLog({
+          action: 'assign',
+          category: 'workflow',
+          userId: req.user.id,
+          userName: req.user.username || req.user.email,
+          targetType: 'tender_assignment',
+          targetId: assignment.id.toString(),
+          targetName: tender?.t247Id || 'Unknown',
+          details: JSON.stringify({ tenderId, assignedTo, assignedBy, priority }),
+          ipAddress: req.ip || 'unknown',
+        });
+      } catch (e) {
+        console.error("Failed to log assignment:", e);
+      }
+
       res.json(assignment);
     } catch (error) {
       console.error("Error creating assignment:", error);
@@ -1749,6 +1767,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!assignment) {
         return res.status(404).json({ message: "Assignment not found" });
       }
+
+      // Log workflow stage change
+      try {
+        await storage.createAuditLog({
+          action: 'status_change',
+          category: 'workflow',
+          userId: req.user.id,
+          userName: req.user.username || req.user.email,
+          targetType: 'tender_assignment',
+          targetId: id.toString(),
+          targetName: `Stage: ${stage}`,
+          details: JSON.stringify({ fromStage: 'previous', toStage: stage, note }),
+          ipAddress: req.ip || 'unknown',
+        });
+      } catch (e) {
+        console.error("Failed to log stage change:", e);
+      }
+
       res.json(assignment);
     } catch (error) {
       console.error("Error updating assignment stage:", error);
@@ -1805,6 +1841,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         changedBy: submittedBy,
         note: `Submitted to portal with budget: ${submittedBudget} Lakhs`,
       });
+
+      // Log submission
+      try {
+        const tender = await storage.getTenderById(tenderId);
+        await storage.createAuditLog({
+          action: 'submit',
+          category: 'workflow',
+          userId: req.user.id,
+          userName: req.user.username || req.user.email,
+          targetType: 'bidding_submission',
+          targetId: submission.id.toString(),
+          targetName: tender?.t247Id || 'Unknown',
+          details: JSON.stringify({ budget: submittedBudget, portal: portalReferenceNumber }),
+          ipAddress: req.ip || 'unknown',
+        });
+      } catch (e) {
+        console.error("Failed to log submission:", e);
+      }
 
       res.json(submission);
     } catch (error) {
