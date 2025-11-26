@@ -81,24 +81,50 @@ function findColumn(row: any, ...possibleNames: string[]): any {
   return null;
 }
 
-function parseTenderFromRow(row: any, tenderType: 'gem' | 'non_gem'): Partial<InsertTender> {
+function checkMsmeExemptionFromExcel(value: any): boolean {
+  if (!value) return false;
+  const str = String(value).toLowerCase().trim();
+  // Only true if explicitly "yes" or similar positive values
+  return ['yes', 'y', 'true', '1', 'exempted', 'applicable'].includes(str);
+}
+
+function checkStartupExemptionFromExcel(value: any): boolean {
+  if (!value) return false;
+  const str = String(value).toLowerCase().trim();
+  // Only true if explicitly "yes" or similar positive values
+  return ['yes', 'y', 'true', '1', 'exempted', 'applicable'].includes(str);
+}
+
+interface TenderWithExcelFlags extends Partial<InsertTender> {
+  excelMsmeExemption: boolean;
+  excelStartupExemption: boolean;
+}
+
+function parseTenderFromRow(row: any, tenderType: 'gem' | 'non_gem'): TenderWithExcelFlags {
   const t247Id = findColumn(row, 't247id', 'id', 'tenderid', 'tenderno', 'tendernumber', 'refno', 'referenceno') || `AUTO-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  
+  // Get MSME/Startup exemption directly from Excel columns
+  const msmeExemptionValue = findColumn(row, 'msmeexemption', 'msme', 'msmeexempted');
+  const startupExemptionValue = findColumn(row, 'startupexemption', 'startup', 'startupexempted');
   
   return {
     t247Id: String(t247Id),
     tenderType,
-    title: findColumn(row, 'title', 'tendertitle', 'name', 'subject', 'work', 'description') || null,
-    department: findColumn(row, 'department', 'dept', 'ministry', 'organization', 'org') || null,
+    title: findColumn(row, 'title', 'tendertitle', 'name', 'subject', 'work', 'description', 'tenderbrief', 'brief') || null,
+    department: findColumn(row, 'department', 'dept', 'ministry') || null,
     organization: findColumn(row, 'organization', 'org', 'company', 'buyer', 'buyerorg') || null,
     estimatedValue: parseNumber(findColumn(row, 'estimatedvalue', 'value', 'amount', 'budget', 'cost', 'estimatedcost', 'tendervalue'))?.toString() || null,
     emdAmount: parseNumber(findColumn(row, 'emd', 'emdamount', 'earnestmoney', 'earnestmoneydeposit', 'emdr', 'bidsecrurity'))?.toString() || null,
     turnoverRequirement: parseNumber(findColumn(row, 'turnover', 'turnoverrequirement', 'annualturnover', 'minturnover'))?.toString() || null,
     publishDate: parseExcelDate(findColumn(row, 'publishdate', 'publishedon', 'startdate', 'bidstartdate', 'publicationdate')),
     submissionDeadline: parseExcelDate(findColumn(row, 'submissiondeadline', 'deadline', 'duedate', 'bidenddate', 'closingdate', 'lastdate', 'bidsubmissionenddate')),
-    openingDate: parseExcelDate(findColumn(row, 'openingdate', 'bidopeningdate', 'opendate')),
+    openingDate: parseExcelDate(findColumn(row, 'openingdate', 'bidopeningdate', 'opendate', 'bidopeningdatetime')),
     eligibilityCriteria: findColumn(row, 'eligibilitycriteria', 'eligibility', 'criteria', 'qualification', 'requirements', 'qr', 'qualifyingcriteria') || null,
     checklist: findColumn(row, 'checklist', 'documents', 'requireddocuments', 'doclist', 'documentlist') || null,
     rawData: row,
+    // Excel exemption flags
+    excelMsmeExemption: checkMsmeExemptionFromExcel(msmeExemptionValue),
+    excelStartupExemption: checkStartupExemptionFromExcel(startupExemptionValue),
   };
 }
 
@@ -134,8 +160,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { status } = req.query;
       
-      if (status === 'unable_to_analyze') {
-        const tenders = await storage.getTendersByStatus('unable_to_analyze');
+      if (status === 'unable_to_analyze' || status === 'not_eligible') {
+        const tenders = await storage.getTendersByStatus(status);
         return res.json(tenders);
       }
       
@@ -144,6 +170,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching tenders:", error);
       res.status(500).json({ message: "Failed to fetch tenders" });
+    }
+  });
+
+  // Get not eligible tenders (separate endpoint for clarity)
+  app.get('/api/tenders/not-eligible', isAuthenticated, async (req, res) => {
+    try {
+      const tenders = await storage.getTendersByStatus('not_eligible');
+      res.json(tenders);
+    } catch (error) {
+      console.error("Error fetching not eligible tenders:", error);
+      res.status(500).json({ message: "Failed to fetch not eligible tenders" });
     }
   });
 
@@ -204,39 +241,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let nonGemCount = 0;
       const processedTenders: any[] = [];
 
-      // Process sheets
-      const sheetTypes: { name: string; type: 'gem' | 'non_gem' }[] = [
-        { name: 'gem', type: 'gem' },
-        { name: 'Gem', type: 'gem' },
-        { name: 'GEM', type: 'gem' },
-        { name: 'non-gem', type: 'non_gem' },
-        { name: 'Non-Gem', type: 'non_gem' },
-        { name: 'NON-GEM', type: 'non_gem' },
-        { name: 'nongem', type: 'non_gem' },
-        { name: 'NonGem', type: 'non_gem' },
-      ];
-
-      for (const sheetInfo of sheetTypes) {
-        const sheetName = workbook.SheetNames.find(
-          name => name.toLowerCase().replace(/[-_\s]/g, '') === sheetInfo.name.toLowerCase().replace(/[-_\s]/g, '')
-        );
+      // Process all sheets
+      for (const sheetName of workbook.SheetNames) {
+        const normalizedName = sheetName.toLowerCase().replace(/[-_\s]/g, '');
         
-        if (!sheetName) continue;
+        // Determine tender type from sheet name
+        let tenderType: 'gem' | 'non_gem' = 'non_gem';
+        if (normalizedName.includes('gem') && !normalizedName.includes('nongem') && !normalizedName.includes('non')) {
+          tenderType = 'gem';
+        }
+        
+        console.log(`Processing sheet: ${sheetName} as ${tenderType}`);
         
         const sheet = workbook.Sheets[sheetName];
         const data = XLSX.utils.sheet_to_json(sheet);
         
+        console.log(`Found ${data.length} rows in sheet ${sheetName}`);
+        
         for (const row of data) {
-          const tenderData = parseTenderFromRow(row, sheetInfo.type);
+          const tenderData = parseTenderFromRow(row, tenderType);
           
           // Check for duplicate T247 ID (corrigendum detection)
           const existingTender = await storage.getTenderByT247Id(tenderData.t247Id!);
           
-          // Analyze eligibility
-          const matchResult = analyzeEligibility(tenderData, criteria!);
+          // Use Excel exemption flags if available, otherwise analyze from text
+          const excelMsme = tenderData.excelMsmeExemption;
+          const excelStartup = tenderData.excelStartupExemption;
+          
+          // Analyze eligibility with Excel exemption flags
+          const matchResult = analyzeEligibility(tenderData, criteria!, excelMsme, excelStartup);
+          
+          // Remove temporary Excel fields before inserting
+          const { excelMsmeExemption, excelStartupExemption, ...tenderInsertData } = tenderData;
           
           const fullTenderData: InsertTender = {
-            ...tenderData,
+            ...tenderInsertData,
             uploadId: uploadRecord.id,
             matchPercentage: matchResult.matchPercentage,
             isMsmeExempted: matchResult.isMsmeExempted,
@@ -263,7 +302,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
           
-          if (sheetInfo.type === 'gem') {
+          if (tenderType === 'gem') {
             gemCount++;
           } else {
             nonGemCount++;

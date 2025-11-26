@@ -5,14 +5,16 @@ export interface MatchResult {
   isMsmeExempted: boolean;
   isStartupExempted: boolean;
   tags: string[];
-  analysisStatus: "analyzed" | "unable_to_analyze";
+  analysisStatus: "analyzed" | "unable_to_analyze" | "not_eligible";
+  turnoverRequired: number | null;
+  turnoverMet: boolean;
 }
 
 const PROJECT_TYPE_KEYWORDS: Record<string, string[]> = {
   'Software': ['software', 'application', 'app development', 'programming', 'coding', 'erp', 'crm', 'portal'],
   'Website': ['website', 'web portal', 'web development', 'web application', 'web design', 'wordpress', 'e-commerce', 'ecommerce'],
   'Mobile': ['mobile', 'android', 'ios', 'app', 'smartphone', 'tablet'],
-  'IT Projects': ['it project', 'information technology', 'ict', 'digitization', 'digital', 'automation', 'computerization'],
+  'IT Projects': ['it project', 'information technology', 'ict', 'digitization', 'digital', 'automation', 'computerization', 'ites', 'it/ites', 'it services'],
   'Manpower Deployment': ['manpower', 'staff', 'personnel', 'resource', 'outsourcing', 'deployment', 'hiring', 'recruitment', 'human resource'],
   'Consulting': ['consulting', 'consultancy', 'advisory', 'audit', 'assessment'],
   'Maintenance': ['maintenance', 'amc', 'annual maintenance', 'support', 'operation'],
@@ -21,54 +23,85 @@ const PROJECT_TYPE_KEYWORDS: Record<string, string[]> = {
   'Cybersecurity': ['security', 'cyber', 'firewall', 'encryption', 'ssl', 'audit', 'vapt', 'penetration'],
 };
 
-const MSME_KEYWORDS = [
-  'msme', 'micro', 'small', 'medium', 'enterprise', 
-  'exempted for msme', 'msme exempted', 'relaxation for msme',
-  'msme relaxation', 'waiver for msme', 'exemption for msme',
-  'prior turnover exempted', 'turnover exempted',
-  'turnover criteria relaxed', 'turnover not applicable'
+// More specific MSME exemption patterns - must be explicit exemption statements
+const MSME_EXEMPTION_PATTERNS = [
+  /msme\s*(are|is)?\s*exempt(ed)?/i,
+  /exempt(ed|ion)?\s*(for|to)?\s*msme/i,
+  /relaxation\s*(for|to)?\s*msme/i,
+  /msme\s*relaxation/i,
+  /waiver\s*(for|to)?\s*msme/i,
+  /turnover\s*(requirement|criteria)?\s*(is\s*)?(exempt(ed)?|waived|relaxed|not\s*applicable)\s*(for|to)?\s*msme/i,
+  /prior\s*turnover\s*(is\s*)?(exempt(ed)?|waived|not\s*required)/i,
+  /turnover\s*criteria\s*(is\s*)?(relaxed|waived|exempted)/i,
 ];
 
-const STARTUP_KEYWORDS = [
-  'startup', 'start-up', 'start up', 'startups',
-  'exempted for startup', 'startup exempted', 'relaxation for startup',
-  'startup relaxation', 'dpiit', 'recognized startup'
+const STARTUP_EXEMPTION_PATTERNS = [
+  /startup(s)?\s*(are|is)?\s*exempt(ed)?/i,
+  /exempt(ed|ion)?\s*(for|to)?\s*startup/i,
+  /relaxation\s*(for|to)?\s*startup/i,
+  /startup\s*relaxation/i,
+  /dpiit\s*registered\s*startup/i,
+  /recognized\s*startup/i,
+  /turnover\s*(requirement|criteria)?\s*(is\s*)?(exempt(ed)?|waived|relaxed|not\s*applicable)\s*(for|to)?\s*startup/i,
 ];
 
-const TURNOVER_PATTERN = /(?:turnover|annual turnover|avg\.\s*turnover|average turnover)[:\s]*(?:rs\.?\s*)?(\d+(?:\.\d+)?)\s*(?:cr(?:ore)?|lakh|lac|l)/gi;
-const TURNOVER_CR_PATTERN = /(\d+(?:\.\d+)?)\s*(?:cr(?:ore)?)/gi;
-const TURNOVER_LAKH_PATTERN = /(\d+(?:\.\d+)?)\s*(?:lakh|lac|l)/gi;
+// Patterns that indicate NO exemption is allowed
+const NO_EXEMPTION_PATTERNS = [
+  /no\s*exemption/i,
+  /exemption\s*not\s*allowed/i,
+  /exemption\s*not\s*applicable/i,
+  /no\s*relaxation/i,
+  /relaxation\s*not\s*allowed/i,
+  /mandatory\s*requirement/i,
+  /strictly\s*required/i,
+];
 
 function extractTurnoverRequirement(text: string): number | null {
   if (!text) return null;
   
   const lowerText = text.toLowerCase();
   
-  // Look for crore amounts first
-  const crMatches = [...lowerText.matchAll(/(?:turnover|annual turnover)[:\s]*(?:rs\.?\s*)?(\d+(?:\.\d+)?)\s*(?:cr(?:ore)?)/gi)];
-  if (crMatches.length > 0) {
-    return parseFloat(crMatches[0][1]);
+  // Multiple patterns to catch various turnover formats
+  const patterns = [
+    // "Rs.10 Crores" or "Rs. 10 Crore" or "Rs 10 Crores"
+    /rs\.?\s*(\d+(?:\.\d+)?)\s*(?:cr(?:ore)?s?)/gi,
+    // "10 Crore" or "10 Crores" with context
+    /(?:at\s*least|minimum|min\.?|should\s*be)\s*(?:rs\.?\s*)?(\d+(?:\.\d+)?)\s*(?:cr(?:ore)?s?)/gi,
+    // "turnover ... Rs.10 Crores"
+    /turnover[^.]*?(?:rs\.?\s*)?(\d+(?:\.\d+)?)\s*(?:cr(?:ore)?s?)/gi,
+    // "average annual turnover ... should be at least Rs.10 Crores"
+    /(?:average\s*)?(?:annual\s*)?turnover[^.]*?(?:at\s*least\s*)?(?:rs\.?\s*)?(\d+(?:\.\d+)?)\s*(?:cr(?:ore)?s?)/gi,
+    // "INR 10 Crore"
+    /inr\.?\s*(\d+(?:\.\d+)?)\s*(?:cr(?:ore)?s?)/gi,
+    // Fallback: number followed by crore/crores
+    /(\d+(?:\.\d+)?)\s*(?:cr(?:ore)?s?)/gi,
+  ];
+  
+  for (const pattern of patterns) {
+    const matches = [...text.matchAll(pattern)];
+    if (matches.length > 0) {
+      const amount = parseFloat(matches[0][1]);
+      if (amount > 0 && amount < 10000) { // Reasonable range for crores
+        return amount;
+      }
+    }
   }
   
-  // Look for lakh amounts
-  const lakhMatches = [...lowerText.matchAll(/(?:turnover|annual turnover)[:\s]*(?:rs\.?\s*)?(\d+(?:\.\d+)?)\s*(?:lakh|lac|l)/gi)];
-  if (lakhMatches.length > 0) {
-    return parseFloat(lakhMatches[0][1]) / 100; // Convert to crore
-  }
+  // Check for lakh amounts
+  const lakhPatterns = [
+    /rs\.?\s*(\d+(?:\.\d+)?)\s*(?:lakh|lac|l(?:acs)?)/gi,
+    /(?:at\s*least|minimum)\s*(?:rs\.?\s*)?(\d+(?:\.\d+)?)\s*(?:lakh|lac|l(?:acs)?)/gi,
+    /turnover[^.]*?(?:rs\.?\s*)?(\d+(?:\.\d+)?)\s*(?:lakh|lac|l(?:acs)?)/gi,
+  ];
   
-  // Generic pattern
-  const genericMatches = [...lowerText.matchAll(/(?:minimum|min\.?|avg\.?)?\s*(?:annual)?\s*turnover[:\s]*(?:rs\.?\s*)?(\d+(?:\.\d+)?)\s*(?:cr|crore|lakh|lac|l)?/gi)];
-  if (genericMatches.length > 0) {
-    const match = genericMatches[0];
-    const amount = parseFloat(match[1]);
-    const unit = match[0].toLowerCase();
-    if (unit.includes('lakh') || unit.includes('lac') || unit.includes(' l')) {
-      return amount / 100;
+  for (const pattern of lakhPatterns) {
+    const matches = [...text.matchAll(pattern)];
+    if (matches.length > 0) {
+      const amount = parseFloat(matches[0][1]);
+      if (amount > 0) {
+        return amount / 100; // Convert lakhs to crores
+      }
     }
-    if (unit.includes('cr') || amount < 100) {
-      return amount;
-    }
-    return amount / 100; // Assume lakh if large number
   }
   
   return null;
@@ -99,21 +132,49 @@ function detectTags(text: string, criteria: CompanyCriteria): string[] {
 
 function checkMsmeExemption(text: string): boolean {
   if (!text) return false;
-  const lowerText = text.toLowerCase();
   
-  return MSME_KEYWORDS.some(keyword => lowerText.includes(keyword));
+  // First check if exemption is explicitly denied
+  for (const pattern of NO_EXEMPTION_PATTERNS) {
+    if (pattern.test(text)) {
+      return false;
+    }
+  }
+  
+  // Then check for explicit MSME exemption patterns
+  for (const pattern of MSME_EXEMPTION_PATTERNS) {
+    if (pattern.test(text)) {
+      return true;
+    }
+  }
+  
+  return false;
 }
 
 function checkStartupExemption(text: string): boolean {
   if (!text) return false;
-  const lowerText = text.toLowerCase();
   
-  return STARTUP_KEYWORDS.some(keyword => lowerText.includes(keyword));
+  // First check if exemption is explicitly denied
+  for (const pattern of NO_EXEMPTION_PATTERNS) {
+    if (pattern.test(text)) {
+      return false;
+    }
+  }
+  
+  // Then check for explicit startup exemption patterns
+  for (const pattern of STARTUP_EXEMPTION_PATTERNS) {
+    if (pattern.test(text)) {
+      return true;
+    }
+  }
+  
+  return false;
 }
 
 export function analyzeEligibility(
   tender: Partial<InsertTender>,
-  criteria: CompanyCriteria
+  criteria: CompanyCriteria,
+  excelMsmeExemption: boolean = false,
+  excelStartupExemption: boolean = false
 ): MatchResult {
   const eligibilityText = [
     tender.eligibilityCriteria || '',
@@ -124,61 +185,77 @@ export function analyzeEligibility(
   if (!eligibilityText.trim()) {
     return {
       matchPercentage: 0,
-      isMsmeExempted: false,
-      isStartupExempted: false,
+      isMsmeExempted: excelMsmeExemption,
+      isStartupExempted: excelStartupExemption,
       tags: [],
       analysisStatus: "unable_to_analyze",
+      turnoverRequired: null,
+      turnoverMet: false,
     };
   }
   
-  // Check for MSME/Startup exemptions
-  const isMsmeExempted = checkMsmeExemption(eligibilityText);
-  const isStartupExempted = checkStartupExemption(eligibilityText);
+  // Use Excel exemption if provided, otherwise check from text
+  // Excel column values take precedence since they are explicit
+  const isMsmeExempted = excelMsmeExemption || checkMsmeExemption(eligibilityText);
+  const isStartupExempted = excelStartupExemption || checkStartupExemption(eligibilityText);
   
   // Detect tags based on project type keywords
   const tags = detectTags(eligibilityText, criteria);
+  
+  // Extract turnover requirement
+  const requiredTurnover = extractTurnoverRequirement(eligibilityText);
+  const companyTurnover = parseFloat(criteria.turnoverCr || "4");
+  
+  // Determine if turnover requirement is met
+  let turnoverMet = true;
+  if (requiredTurnover !== null) {
+    if (isMsmeExempted || isStartupExempted) {
+      turnoverMet = true; // Exempted
+    } else if (companyTurnover >= requiredTurnover) {
+      turnoverMet = true;
+    } else {
+      turnoverMet = false; // NOT ELIGIBLE - company doesn't meet turnover requirement
+    }
+  }
   
   // Calculate match percentage
   let matchScore = 0;
   let totalCriteria = 0;
   
-  // 1. Check turnover requirement (40% weight)
-  const requiredTurnover = extractTurnoverRequirement(eligibilityText);
-  const companyTurnover = parseFloat(criteria.turnoverCr || "4");
-  
-  totalCriteria += 40;
+  // 1. Check turnover requirement (50% weight - most important)
+  totalCriteria += 50;
   if (isMsmeExempted || isStartupExempted) {
-    matchScore += 40; // Full score if exempted
+    matchScore += 50; // Full score if exempted
   } else if (requiredTurnover === null) {
-    matchScore += 30; // Partial score if no requirement found
+    matchScore += 40; // Good score if no explicit requirement found
   } else if (companyTurnover >= requiredTurnover) {
-    matchScore += 40; // Full score if meets requirement
+    matchScore += 50; // Full score if meets requirement
   } else {
-    // Partial score based on how close they are
-    const ratio = companyTurnover / requiredTurnover;
-    matchScore += Math.floor(40 * ratio);
+    // Zero score if turnover requirement is not met - this is critical
+    matchScore += 0;
   }
   
-  // 2. Check project type match (40% weight)
-  totalCriteria += 40;
+  // 2. Check project type match (30% weight)
+  totalCriteria += 30;
   if (tags.length > 0) {
-    matchScore += 40; // Full score if at least one tag matches
+    matchScore += 30; // Full score if at least one tag matches
   } else {
-    // Check if the tender seems to be in a completely different domain
+    // Check if the tender seems to be in a related domain
     const textLower = eligibilityText.toLowerCase();
     const hasITKeywords = [
       'software', 'it', 'technology', 'digital', 'computer', 'web', 'mobile', 
-      'application', 'development', 'system', 'portal', 'manpower', 'staff'
+      'application', 'development', 'system', 'portal', 'manpower', 'staff',
+      'ites', 'it/ites', 'it services'
     ].some(kw => textLower.includes(kw));
     
     if (hasITKeywords) {
-      matchScore += 20; // Partial score for related but not exact match
+      matchScore += 15; // Partial score for related but not exact match
     }
   }
   
   // 3. Check for negative criteria - construction, civil works etc (20% weight)
   totalCriteria += 20;
-  const negativeKeywords = ['civil', 'construction', 'building', 'road', 'bridge', 'infrastructure', 'medical', 'pharmaceutical'];
+  const negativeKeywords = ['civil', 'construction', 'building', 'road', 'bridge', 'infrastructure', 'medical', 'pharmaceutical', 'electrical', 'mechanical'];
   const hasNegative = negativeKeywords.some(kw => eligibilityText.toLowerCase().includes(kw));
   
   if (!hasNegative) {
@@ -188,20 +265,31 @@ export function analyzeEligibility(
   // Calculate final percentage
   let matchPercentage = Math.round((matchScore / totalCriteria) * 100);
   
-  // If MSME/Startup exempted, boost to 100%
-  if (isMsmeExempted || isStartupExempted) {
+  // If MSME/Startup exempted and all other criteria met, can go to 100%
+  if ((isMsmeExempted || isStartupExempted) && tags.length > 0 && !hasNegative) {
     matchPercentage = 100;
   }
   
   // Ensure percentage is within bounds
   matchPercentage = Math.max(0, Math.min(100, matchPercentage));
   
+  // Determine analysis status
+  let analysisStatus: "analyzed" | "unable_to_analyze" | "not_eligible" = "analyzed";
+  
+  // If turnover requirement exists and company doesn't meet it (and no exemption), mark as NOT ELIGIBLE
+  if (!turnoverMet && requiredTurnover !== null) {
+    analysisStatus = "not_eligible";
+    matchPercentage = Math.min(matchPercentage, 40); // Cap at 40% for not eligible
+  }
+  
   return {
     matchPercentage,
     isMsmeExempted,
     isStartupExempted,
     tags,
-    analysisStatus: "analyzed",
+    analysisStatus,
+    turnoverRequired: requiredTurnover,
+    turnoverMet,
   };
 }
 

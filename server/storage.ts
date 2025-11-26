@@ -211,7 +211,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Stats
-  async getStats(): Promise<{ total: number; fullMatch: number; pendingAnalysis: number; todayUploads: number }> {
+  async getStats(): Promise<{ total: number; fullMatch: number; pendingAnalysis: number; notEligible: number; todayUploads: number }> {
     const [totalResult] = await db
       .select({ count: sql<number>`count(*)` })
       .from(tenders);
@@ -226,6 +226,11 @@ export class DatabaseStorage implements IStorage {
       .from(tenders)
       .where(eq(tenders.analysisStatus, "unable_to_analyze"));
     
+    const [notEligibleResult] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(tenders)
+      .where(eq(tenders.analysisStatus, "not_eligible"));
+    
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
@@ -238,6 +243,7 @@ export class DatabaseStorage implements IStorage {
       total: Number(totalResult?.count || 0),
       fullMatch: Number(fullMatchResult?.count || 0),
       pendingAnalysis: Number(pendingResult?.count || 0),
+      notEligible: Number(notEligibleResult?.count || 0),
       todayUploads: Number(todayResult?.count || 0),
     };
   }

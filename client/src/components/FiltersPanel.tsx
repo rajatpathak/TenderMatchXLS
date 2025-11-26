@@ -30,9 +30,9 @@ interface FiltersPanelProps {
   onClearFilters: () => void;
 }
 
-const availableTags = ['Manpower', 'IT', 'Software', 'Website', 'Mobile'];
+const availableTags = ['Manpower', 'IT Projects', 'Software', 'Website', 'Mobile'];
 const tenderTypes = ['gem', 'non_gem'];
-const analysisStatuses = ['analyzed', 'unable_to_analyze'];
+const analysisStatuses = ['analyzed', 'not_eligible', 'unable_to_analyze'];
 
 export function FiltersPanel({ filters, onFiltersChange, onClearFilters }: FiltersPanelProps) {
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({

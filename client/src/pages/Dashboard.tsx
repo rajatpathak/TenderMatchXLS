@@ -24,6 +24,7 @@ interface DashboardStats {
   total: number;
   fullMatch: number;
   pendingAnalysis: number;
+  notEligible: number;
   todayUploads: number;
 }
 
@@ -112,6 +113,13 @@ export default function Dashboard() {
       icon: CheckCircle2,
       color: "text-emerald-600 dark:text-emerald-400",
       bgColor: "bg-emerald-500/10",
+    },
+    {
+      title: "Not Eligible",
+      value: stats?.notEligible || 0,
+      icon: X,
+      color: "text-red-600 dark:text-red-400",
+      bgColor: "bg-red-500/10",
     },
     {
       title: "Pending Analysis",
