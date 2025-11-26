@@ -30,7 +30,46 @@ function parseExcelDate(value: any): Date | null {
   }
   
   if (typeof value === 'string') {
-    const parsed = new Date(value);
+    const trimmed = value.trim();
+    
+    // Try DD-MM-YYYY format first (e.g., "25-12-2024" or "25/12/2024")
+    const ddmmyyyyMatch = trimmed.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
+    if (ddmmyyyyMatch) {
+      const day = parseInt(ddmmyyyyMatch[1], 10);
+      const month = parseInt(ddmmyyyyMatch[2], 10) - 1; // JS months are 0-indexed
+      const year = parseInt(ddmmyyyyMatch[3], 10);
+      const date = new Date(year, month, day);
+      if (!isNaN(date.getTime()) && date.getDate() === day) {
+        return date;
+      }
+    }
+    
+    // Try DD-MM-YYYY HH:MM format (e.g., "25-12-2024 14:30")
+    const ddmmyyyyTimeMatch = trimmed.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (ddmmyyyyTimeMatch) {
+      const day = parseInt(ddmmyyyyTimeMatch[1], 10);
+      const month = parseInt(ddmmyyyyTimeMatch[2], 10) - 1;
+      const year = parseInt(ddmmyyyyTimeMatch[3], 10);
+      const hours = parseInt(ddmmyyyyTimeMatch[4], 10);
+      const minutes = parseInt(ddmmyyyyTimeMatch[5], 10);
+      const seconds = ddmmyyyyTimeMatch[6] ? parseInt(ddmmyyyyTimeMatch[6], 10) : 0;
+      const date = new Date(year, month, day, hours, minutes, seconds);
+      if (!isNaN(date.getTime()) && date.getDate() === day) {
+        return date;
+      }
+    }
+    
+    // Try YYYY-MM-DD format (ISO format)
+    const isoMatch = trimmed.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+    if (isoMatch) {
+      const parsed = new Date(trimmed);
+      if (!isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+    
+    // Fallback to native Date parsing
+    const parsed = new Date(trimmed);
     return isNaN(parsed.getTime()) ? null : parsed;
   }
   
