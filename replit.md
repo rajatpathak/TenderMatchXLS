@@ -1,13 +1,13 @@
 # TenderMatch - Tender Eligibility Analyzer
 
 ## Overview
-TenderMatch is a web application for analyzing government tender eligibility. It allows users to upload Excel files containing tender data (GEM and Non-GEM), automatically categorizes tenders based on company criteria and negative keywords, and provides filtering and override capabilities.
+TenderMatch is a web application for analyzing government tender eligibility with complete workflow management. It allows users to upload Excel files containing tender data (GEM and Non-GEM), automatically categorizes tenders based on company criteria and negative keywords, assigns tenders to team members, and tracks bidding progress through to submission.
 
 ## Tech Stack
 - **Frontend**: React with TypeScript, Tailwind CSS, Shadcn UI
 - **Backend**: Express.js with Node.js
 - **Database**: PostgreSQL with Drizzle ORM
-- **Authentication**: Secure bcrypt-based admin authentication (configurable via env vars)
+- **Authentication**: Secure bcrypt-based admin authentication with role-based access control
 - **File Processing**: XLSX for Excel parsing, pdf-parse for PDF extraction
 
 ## Project Structure
@@ -15,7 +15,7 @@ TenderMatch is a web application for analyzing government tender eligibility. It
 ├── client/                 # Frontend React application
 │   ├── src/
 │   │   ├── components/     # Reusable UI components
-│   │   ├── pages/          # Page components
+│   │   ├── pages/          # Page components (Dashboard, WorkflowPage, SubmittedTenders, TeamManagement)
 │   │   ├── hooks/          # Custom React hooks
 │   │   └── lib/            # Utility functions
 ├── server/                 # Backend Express application
@@ -30,17 +30,34 @@ TenderMatch is a web application for analyzing government tender eligibility. It
 
 ## Key Features
 1. **Excel Upload**: Upload tender Excel files with Gem/Non-Gem sheets
-2. **Smart Tender Categorization**: Automatic categorization into 4 categories:
+2. **Smart Tender Categorization**: Automatic categorization into 5 categories:
    - **Eligible**: Matches company criteria (project types + turnover)
    - **Not Relevant**: Contains negative keywords (only for non-IT tenders)
    - **Not Eligible**: Doesn't meet turnover requirements
    - **Manual Review**: Requires PDF upload for analysis
+   - **Missed**: Tenders past deadline
 3. **Intelligent Negative Keywords**: IT/Software tenders override negative keywords
 4. **Manual Override**: Override automatic categorization with reason and comment
 5. **MSME/Startup Exemptions**: Automatic detection of turnover exemptions
 6. **Corrigendum Tracking**: Detect duplicate T247 IDs and track changes
 7. **PDF Analysis**: Upload PDFs for tenders with unclear eligibility
 8. **Project Type Filtering**: Filter dashboard by detected tags
+9. **Team Management**: Add team members with roles (admin/manager/bidder)
+10. **Tender Assignment**: Assign eligible tenders to bidders with priority and deadline
+11. **Workflow Management**: Track tender progress through bidding stages
+12. **Submission Tracking**: Record final bids with budget and portal reference
+
+## Workflow Stages
+Tenders progress through the following stages after assignment:
+- **Assigned**: Tender assigned to a bidder
+- **In Progress**: Bidder actively working on the bid
+- **Ready for Review**: Bid prepared, awaiting manager review
+- **Submitted**: Bid submitted to portal (with budget capture)
+
+## User Roles
+- **Admin**: Full access to all features including team management
+- **Manager**: Can assign tenders and review submissions
+- **Bidder**: Can update workflow status on assigned tenders
 
 ## Eligibility Matching Logic
 1. Core service detection checks if tender matches IT/Software services
@@ -58,11 +75,18 @@ TenderMatch is a web application for analyzing government tender eligibility. It
 - `negative_keywords` - Keywords to filter irrelevant tenders
 - `corrigendum_changes` - Change tracking
 - `tender_documents` - PDF uploads
+- `team_members` - Team member profiles with roles
+- `tender_assignments` - Tender assignment tracking with workflow status
+- `bidding_submissions` - Final bid submission records
 
 ## API Endpoints
+### Authentication
 - `GET /api/auth/user` - Current user
 - `POST /api/login` - Login
 - `POST /api/logout` - Logout
+- `GET /api/me/team-member` - Get current user's team member record
+
+### Tender Management
 - `GET /api/tenders` - List all tenders
 - `GET /api/tenders/status/:status` - Get tenders by eligibility status
 - `POST /api/tenders/:id/override` - Override tender status
@@ -71,6 +95,22 @@ TenderMatch is a web application for analyzing government tender eligibility. It
 - `POST /api/upload` - Upload Excel file
 - `POST /api/tenders/upload-pdf` - Upload PDF for analysis
 - `GET /api/uploads` - Upload history
+
+### Team Management
+- `GET /api/team-members` - List all team members
+- `POST /api/team-members` - Add team member
+- `PUT /api/team-members/:id` - Update team member
+- `DELETE /api/team-members/:id` - Remove team member
+
+### Workflow Management
+- `GET /api/tender-assignments` - List all assignments
+- `GET /api/tender-assignments/stats` - Get workflow stats (counts per stage)
+- `POST /api/tender-assignments` - Create assignment
+- `PUT /api/tender-assignments/:id/stage` - Update workflow stage
+- `GET /api/bidding-submissions` - List all submissions
+- `POST /api/bidding-submissions` - Record bid submission
+
+### Configuration
 - `GET /api/company-criteria` - Get criteria
 - `PUT /api/company-criteria` - Update criteria
 - `GET /api/negative-keywords` - Get negative keywords
