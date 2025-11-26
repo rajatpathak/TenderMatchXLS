@@ -100,17 +100,55 @@ interface TenderWithExcelFlags extends Partial<InsertTender> {
   excelStartupExemption: boolean;
 }
 
-function parseTenderFromRow(row: any, tenderType: 'gem' | 'non_gem'): TenderWithExcelFlags {
+function getColumnByLetter(sheet: XLSX.WorkSheet, rowIdx: number, colLetter: string): any {
+  const cellAddress = `${colLetter}${rowIdx}`;
+  const cell = sheet[cellAddress];
+  return cell ? cell.v : null;
+}
+
+function parseTenderFromRow(row: any, tenderType: 'gem' | 'non_gem', sheet?: XLSX.WorkSheet, rowIndex?: number): TenderWithExcelFlags {
   const t247Id = findColumn(row, 't247id', 'id', 'tenderid', 'tenderno', 'tendernumber', 'refno', 'referenceno') || `AUTO-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  
+  // Get REFERENCE NO for title display
+  const referenceNo = findColumn(row, 'referenceno', 'refno', 'refrno', 'reference', 'referanceno');
+  
+  // Get the tender brief/title
+  const tenderBrief = findColumn(row, 'title', 'tendertitle', 'name', 'subject', 'work', 'description', 'tenderbrief', 'brief') || null;
+  
+  // Combine REFERENCE NO with title if both exist
+  let fullTitle = tenderBrief;
+  if (referenceNo && tenderBrief) {
+    fullTitle = `[${referenceNo}] ${tenderBrief}`;
+  } else if (referenceNo) {
+    fullTitle = `[${referenceNo}]`;
+  }
   
   // Get MSME/Startup exemption directly from Excel columns
   const msmeExemptionValue = findColumn(row, 'msmeexemption', 'msme', 'msmeexempted');
   const startupExemptionValue = findColumn(row, 'startupexemption', 'startup', 'startupexempted');
   
+  // Get eligibility criteria - use column position based on tender type
+  // Non-GEM: Column N, GEM: Column AU
+  let eligibilityCriteria = null;
+  if (sheet && rowIndex !== undefined) {
+    if (tenderType === 'non_gem') {
+      // Column N for Non-GEM eligibility criteria
+      eligibilityCriteria = getColumnByLetter(sheet, rowIndex, 'N');
+    } else if (tenderType === 'gem') {
+      // Column AU for GEM eligibility criteria
+      eligibilityCriteria = getColumnByLetter(sheet, rowIndex, 'AU');
+    }
+  }
+  
+  // Fallback to name-based lookup if column-based didn't find anything
+  if (!eligibilityCriteria) {
+    eligibilityCriteria = findColumn(row, 'eligibilitycriteria', 'eligibility', 'criteria', 'qualification', 'requirements', 'qr', 'qualifyingcriteria') || null;
+  }
+  
   return {
     t247Id: String(t247Id),
     tenderType,
-    title: findColumn(row, 'title', 'tendertitle', 'name', 'subject', 'work', 'description', 'tenderbrief', 'brief') || null,
+    title: fullTitle,
     department: findColumn(row, 'department', 'dept', 'ministry') || null,
     organization: findColumn(row, 'organization', 'org', 'company', 'buyer', 'buyerorg') || null,
     estimatedValue: parseNumber(findColumn(row, 'estimatedvalue', 'value', 'amount', 'budget', 'cost', 'estimatedcost', 'tendervalue'))?.toString() || null,
@@ -119,7 +157,7 @@ function parseTenderFromRow(row: any, tenderType: 'gem' | 'non_gem'): TenderWith
     publishDate: parseExcelDate(findColumn(row, 'publishdate', 'publishedon', 'startdate', 'bidstartdate', 'publicationdate')),
     submissionDeadline: parseExcelDate(findColumn(row, 'submissiondeadline', 'deadline', 'duedate', 'bidenddate', 'closingdate', 'lastdate', 'bidsubmissionenddate')),
     openingDate: parseExcelDate(findColumn(row, 'openingdate', 'bidopeningdate', 'opendate', 'bidopeningdatetime')),
-    eligibilityCriteria: findColumn(row, 'eligibilitycriteria', 'eligibility', 'criteria', 'qualification', 'requirements', 'qr', 'qualifyingcriteria') || null,
+    eligibilityCriteria: eligibilityCriteria ? String(eligibilityCriteria) : null,
     checklist: findColumn(row, 'checklist', 'documents', 'requireddocuments', 'doclist', 'documentlist') || null,
     rawData: row,
     // Excel exemption flags
@@ -258,8 +296,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         console.log(`Found ${data.length} rows in sheet ${sheetName}`);
         
-        for (const row of data) {
-          const tenderData = parseTenderFromRow(row, tenderType);
+        for (let i = 0; i < data.length; i++) {
+          const row = data[i];
+          // Row index in Excel is 1-based, and first row is header, so data row 0 is Excel row 2
+          const excelRowIndex = i + 2;
+          const tenderData = parseTenderFromRow(row, tenderType, sheet, excelRowIndex);
           
           // Check for duplicate T247 ID (corrigendum detection)
           const existingTender = await storage.getTenderByT247Id(tenderData.t247Id!);
@@ -317,8 +358,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const data = XLSX.utils.sheet_to_json(sheet);
         
-        for (const row of data) {
-          const tenderData = parseTenderFromRow(row, 'non_gem');
+        for (let i = 0; i < data.length; i++) {
+          const row = data[i];
+          const excelRowIndex = i + 2;
+          const tenderData = parseTenderFromRow(row, 'non_gem', sheet, excelRowIndex);
           
           const existingTender = await storage.getTenderByT247Id(tenderData.t247Id!);
           const matchResult = analyzeEligibility(tenderData, criteria!);
