@@ -482,34 +482,58 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
           // Remove temporary Excel fields before inserting
           const { excelMsmeExemption, excelStartupExemption, ...tenderInsertData } = tenderData;
           
-          const fullTenderData: InsertTender = {
-            ...tenderInsertData,
-            uploadId,
-            matchPercentage: matchResult.matchPercentage,
-            isMsmeExempted: matchResult.isMsmeExempted,
-            isStartupExempted: matchResult.isStartupExempted,
-            tags: matchResult.tags,
-            analysisStatus: matchResult.analysisStatus,
-            eligibilityStatus: matchResult.eligibilityStatus,
-            notRelevantKeyword: matchResult.notRelevantKeyword,
-            isCorrigendum: !!existingTender,
-            originalTenderId: existingTender?.id || null,
-          };
-          
-          const createdTender = await storage.createTender(fullTenderData);
-          
-          // If this is a corrigendum, detect and save changes
           if (existingTender) {
-            const changes = detectCorrigendumChanges(existingTender, createdTender);
-            for (const change of changes) {
-              await storage.createCorrigendumChange({
-                tenderId: createdTender.id,
-                originalTenderId: existingTender.id,
-                fieldName: change.fieldName,
-                oldValue: change.oldValue,
-                newValue: change.newValue,
+            // UPDATE existing tender instead of creating duplicate
+            // Detect changes first (before updating)
+            const changes = detectCorrigendumChanges(existingTender, tenderInsertData);
+            
+            if (changes.length > 0) {
+              // Only update and mark as corrigendum if there are actual changes
+              const updatedTender = await storage.updateTender(existingTender.id, {
+                ...tenderInsertData,
+                uploadId, // Update to latest upload
+                matchPercentage: matchResult.matchPercentage,
+                isMsmeExempted: matchResult.isMsmeExempted,
+                isStartupExempted: matchResult.isStartupExempted,
+                tags: matchResult.tags,
+                analysisStatus: matchResult.analysisStatus,
+                eligibilityStatus: existingTender.isManualOverride ? existingTender.eligibilityStatus : matchResult.eligibilityStatus,
+                notRelevantKeyword: matchResult.notRelevantKeyword,
+                isCorrigendum: true,
+                // Reset missed status if deadline was updated
+                isMissed: false,
+                missedAt: null,
               });
+              
+              // Save corrigendum changes
+              for (const change of changes) {
+                await storage.createCorrigendumChange({
+                  tenderId: existingTender.id,
+                  originalTenderId: existingTender.id,
+                  fieldName: change.fieldName,
+                  oldValue: change.oldValue,
+                  newValue: change.newValue,
+                });
+              }
             }
+            // If no changes, skip - tender already exists with same data
+          } else {
+            // Create new tender
+            const fullTenderData: InsertTender = {
+              ...tenderInsertData,
+              uploadId,
+              matchPercentage: matchResult.matchPercentage,
+              isMsmeExempted: matchResult.isMsmeExempted,
+              isStartupExempted: matchResult.isStartupExempted,
+              tags: matchResult.tags,
+              analysisStatus: matchResult.analysisStatus,
+              eligibilityStatus: matchResult.eligibilityStatus,
+              notRelevantKeyword: matchResult.notRelevantKeyword,
+              isCorrigendum: false,
+              originalTenderId: null,
+            };
+            
+            await storage.createTender(fullTenderData);
           }
           
           if (tenderType === 'gem') {
@@ -573,6 +597,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error deleting data:", error);
       res.status(500).json({ message: "Failed to delete data" });
+    }
+  });
+  
+  // Cleanup duplicate tenders endpoint
+  app.post('/api/tenders/cleanup-duplicates', isAuthenticated, async (req, res) => {
+    try {
+      const result = await storage.cleanupDuplicateTenders();
+      res.json({ 
+        success: true, 
+        message: `Removed ${result.duplicatesRemoved} duplicate tenders`,
+        ...result 
+      });
+    } catch (error) {
+      console.error("Error cleaning up duplicates:", error);
+      res.status(500).json({ message: "Failed to cleanup duplicates" });
     }
   });
 
@@ -936,34 +975,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Remove temporary Excel fields before inserting
           const { excelMsmeExemption, excelStartupExemption, ...tenderInsertData } = tenderData;
           
-          const fullTenderData: InsertTender = {
-            ...tenderInsertData,
-            uploadId: uploadRecord.id,
-            matchPercentage: matchResult.matchPercentage,
-            isMsmeExempted: matchResult.isMsmeExempted,
-            isStartupExempted: matchResult.isStartupExempted,
-            tags: matchResult.tags,
-            analysisStatus: matchResult.analysisStatus,
-            eligibilityStatus: matchResult.eligibilityStatus,
-            notRelevantKeyword: matchResult.notRelevantKeyword,
-            isCorrigendum: !!existingTender,
-            originalTenderId: existingTender?.id || null,
-          };
-          
-          const createdTender = await storage.createTender(fullTenderData);
-          
-          // If this is a corrigendum, detect and save changes
           if (existingTender) {
-            const changes = detectCorrigendumChanges(existingTender, createdTender);
-            for (const change of changes) {
-              await storage.createCorrigendumChange({
-                tenderId: createdTender.id,
-                originalTenderId: existingTender.id,
-                fieldName: change.fieldName,
-                oldValue: change.oldValue,
-                newValue: change.newValue,
+            // UPDATE existing tender instead of creating duplicate
+            const changes = detectCorrigendumChanges(existingTender, tenderInsertData);
+            
+            if (changes.length > 0) {
+              const updatedTender = await storage.updateTender(existingTender.id, {
+                ...tenderInsertData,
+                uploadId: uploadRecord.id,
+                matchPercentage: matchResult.matchPercentage,
+                isMsmeExempted: matchResult.isMsmeExempted,
+                isStartupExempted: matchResult.isStartupExempted,
+                tags: matchResult.tags,
+                analysisStatus: matchResult.analysisStatus,
+                eligibilityStatus: existingTender.isManualOverride ? existingTender.eligibilityStatus : matchResult.eligibilityStatus,
+                notRelevantKeyword: matchResult.notRelevantKeyword,
+                isCorrigendum: true,
+                isMissed: false,
+                missedAt: null,
               });
+              
+              for (const change of changes) {
+                await storage.createCorrigendumChange({
+                  tenderId: existingTender.id,
+                  originalTenderId: existingTender.id,
+                  fieldName: change.fieldName,
+                  oldValue: change.oldValue,
+                  newValue: change.newValue,
+                });
+              }
+              
+              processedTenders.push(updatedTender);
             }
+          } else {
+            const fullTenderData: InsertTender = {
+              ...tenderInsertData,
+              uploadId: uploadRecord.id,
+              matchPercentage: matchResult.matchPercentage,
+              isMsmeExempted: matchResult.isMsmeExempted,
+              isStartupExempted: matchResult.isStartupExempted,
+              tags: matchResult.tags,
+              analysisStatus: matchResult.analysisStatus,
+              eligibilityStatus: matchResult.eligibilityStatus,
+              notRelevantKeyword: matchResult.notRelevantKeyword,
+              isCorrigendum: false,
+              originalTenderId: null,
+            };
+            
+            const createdTender = await storage.createTender(fullTenderData);
+            processedTenders.push(createdTender);
           }
           
           if (tenderType === 'gem') {
@@ -971,8 +1031,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           } else {
             nonGemCount++;
           }
-          
-          processedTenders.push(createdTender);
         }
       }
 
@@ -989,37 +1047,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const existingTender = await storage.getTenderByT247Id(tenderData.t247Id!);
           const matchResult = analyzeEligibility(tenderData, criteria!, negativeKeywords);
           
-          const fullTenderData: InsertTender = {
-            ...tenderData,
-            uploadId: uploadRecord.id,
-            matchPercentage: matchResult.matchPercentage,
-            isMsmeExempted: matchResult.isMsmeExempted,
-            isStartupExempted: matchResult.isStartupExempted,
-            tags: matchResult.tags,
-            analysisStatus: matchResult.analysisStatus,
-            eligibilityStatus: matchResult.eligibilityStatus,
-            notRelevantKeyword: matchResult.notRelevantKeyword,
-            isCorrigendum: !!existingTender,
-            originalTenderId: existingTender?.id || null,
-          };
-          
-          const createdTender = await storage.createTender(fullTenderData);
-          
           if (existingTender) {
-            const changes = detectCorrigendumChanges(existingTender, createdTender);
-            for (const change of changes) {
-              await storage.createCorrigendumChange({
-                tenderId: createdTender.id,
-                originalTenderId: existingTender.id,
-                fieldName: change.fieldName,
-                oldValue: change.oldValue,
-                newValue: change.newValue,
+            // UPDATE existing tender instead of creating duplicate
+            const changes = detectCorrigendumChanges(existingTender, tenderData);
+            
+            if (changes.length > 0) {
+              const updatedTender = await storage.updateTender(existingTender.id, {
+                ...tenderData,
+                uploadId: uploadRecord.id,
+                matchPercentage: matchResult.matchPercentage,
+                isMsmeExempted: matchResult.isMsmeExempted,
+                isStartupExempted: matchResult.isStartupExempted,
+                tags: matchResult.tags,
+                analysisStatus: matchResult.analysisStatus,
+                eligibilityStatus: existingTender.isManualOverride ? existingTender.eligibilityStatus : matchResult.eligibilityStatus,
+                notRelevantKeyword: matchResult.notRelevantKeyword,
+                isCorrigendum: true,
+                isMissed: false,
+                missedAt: null,
               });
+              
+              for (const change of changes) {
+                await storage.createCorrigendumChange({
+                  tenderId: existingTender.id,
+                  originalTenderId: existingTender.id,
+                  fieldName: change.fieldName,
+                  oldValue: change.oldValue,
+                  newValue: change.newValue,
+                });
+              }
+              
+              processedTenders.push(updatedTender);
             }
+          } else {
+            const fullTenderData: InsertTender = {
+              ...tenderData,
+              uploadId: uploadRecord.id,
+              matchPercentage: matchResult.matchPercentage,
+              isMsmeExempted: matchResult.isMsmeExempted,
+              isStartupExempted: matchResult.isStartupExempted,
+              tags: matchResult.tags,
+              analysisStatus: matchResult.analysisStatus,
+              eligibilityStatus: matchResult.eligibilityStatus,
+              notRelevantKeyword: matchResult.notRelevantKeyword,
+              isCorrigendum: false,
+              originalTenderId: null,
+            };
+            
+            const createdTender = await storage.createTender(fullTenderData);
+            processedTenders.push(createdTender);
           }
           
           nonGemCount++;
-          processedTenders.push(createdTender);
         }
       }
 

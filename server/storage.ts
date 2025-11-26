@@ -86,6 +86,7 @@ export interface IStorage {
   
   // Data management
   deleteAllData(): Promise<void>;
+  cleanupDuplicateTenders(): Promise<{ duplicatesRemoved: number; tenderIdsAffected: string[] }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -121,10 +122,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTenderByT247Id(t247Id: string): Promise<Tender | undefined> {
+    // Get the most recent tender with this T247 ID (regardless of corrigendum status)
     const [tender] = await db
       .select()
       .from(tenders)
-      .where(and(eq(tenders.t247Id, t247Id), eq(tenders.isCorrigendum, false)))
+      .where(eq(tenders.t247Id, t247Id))
       .orderBy(desc(tenders.createdAt))
       .limit(1);
     return tender;
@@ -474,6 +476,58 @@ export class DatabaseStorage implements IStorage {
     await db.delete(tenders);
     await db.delete(excelUploads);
     // Note: We keep negative keywords and company criteria as they are settings
+  }
+  
+  // Cleanup duplicate tenders by T247 ID (keep the most recent one)
+  async cleanupDuplicateTenders(): Promise<{ duplicatesRemoved: number; tenderIdsAffected: string[] }> {
+    // First, find all duplicate T247 IDs
+    const duplicates = await db
+      .select({
+        t247Id: tenders.t247Id,
+        count: sql<number>`COUNT(*)`.as('count'),
+      })
+      .from(tenders)
+      .groupBy(tenders.t247Id)
+      .having(sql`COUNT(*) > 1`);
+    
+    let duplicatesRemoved = 0;
+    const tenderIdsAffected: string[] = [];
+    
+    for (const dup of duplicates) {
+      // Get all tenders with this T247 ID, ordered by createdAt desc
+      const tendersWithId = await db
+        .select()
+        .from(tenders)
+        .where(eq(tenders.t247Id, dup.t247Id))
+        .orderBy(desc(tenders.createdAt));
+      
+      // Keep the first (most recent) one, delete the rest
+      for (let i = 1; i < tendersWithId.length; i++) {
+        const oldTender = tendersWithId[i];
+        
+        // Delete related corrigendum changes first
+        await db.delete(corrigendumChanges).where(eq(corrigendumChanges.tenderId, oldTender.id));
+        
+        // Delete related documents
+        await db.delete(tenderDocuments).where(eq(tenderDocuments.tenderId, oldTender.id));
+        
+        // Delete the tender
+        await db.delete(tenders).where(eq(tenders.id, oldTender.id));
+        duplicatesRemoved++;
+      }
+      
+      tenderIdsAffected.push(dup.t247Id);
+      
+      // Mark the remaining tender as corrigendum if there were duplicates
+      if (tendersWithId.length > 1) {
+        await db
+          .update(tenders)
+          .set({ isCorrigendum: true })
+          .where(eq(tenders.id, tendersWithId[0].id));
+      }
+    }
+    
+    return { duplicatesRemoved, tenderIdsAffected };
   }
 }
 

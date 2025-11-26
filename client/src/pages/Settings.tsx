@@ -237,6 +237,33 @@ export default function Settings() {
     },
   });
 
+  const cleanupDuplicatesMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("POST", "/api/tenders/cleanup-duplicates");
+    },
+    onSuccess: (data: any) => {
+      toast({
+        title: "Duplicates Cleaned Up",
+        description: data.message || `Removed ${data.duplicatesRemoved} duplicate tenders.`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders/status", "eligible"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders/status", "not_eligible"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders/status", "not_relevant"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders/status", "manual_review"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders/status", "missed"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenders/corrigendum"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to cleanup duplicates",
+        variant: "destructive",
+      });
+    },
+  });
+
   return (
     <div className="p-6 h-full overflow-y-auto">
       <div className="max-w-3xl mx-auto space-y-6">
@@ -581,6 +608,43 @@ export default function Settings() {
                   <>
                     <Calendar className="w-4 h-4 mr-2" />
                     Fix All Dates
+                  </>
+                )}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Trash2 className="w-5 h-5" />
+              Cleanup Duplicate Tenders
+            </CardTitle>
+            <CardDescription>
+              Remove duplicate tenders with the same T247 ID. Keeps the most recent entry and marks it as a corrigendum.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                This will find all duplicate T247 IDs, keep only the most recent version, 
+                and mark them as corrigendum. Run this if you have uploaded the same Excel file multiple times.
+              </p>
+              <Button
+                onClick={() => cleanupDuplicatesMutation.mutate()}
+                disabled={cleanupDuplicatesMutation.isPending}
+                data-testid="button-cleanup-duplicates"
+              >
+                {cleanupDuplicatesMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Cleaning Up...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Cleanup Duplicates
                   </>
                 )}
               </Button>
