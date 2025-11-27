@@ -199,7 +199,17 @@ export async function setupAuth(app: Express) {
     // Check team members
     try {
       const teamMember = await storage.getTeamMemberByUsername(username);
-      if (teamMember && teamMember.isActive && teamMember.password === password) {
+      console.log(`🔐 Team member found: ${!!teamMember}`);
+      if (teamMember) {
+        console.log(`🔐 Team member active: ${teamMember.isActive}`);
+        console.log(`🔐 Team member password exists: ${!!teamMember.password}`);
+        console.log(`🔐 Team member password starts with: ${teamMember.password ? teamMember.password.substring(0, 10) + '...' : 'N/A'}`);
+      }
+      if (teamMember && teamMember.isActive) {
+        // Compare hashed password
+        const passwordMatch = await bcrypt.compare(password, teamMember.password);
+        console.log(`🔐 Team member password match: ${passwordMatch}`);
+        if (passwordMatch) {
         // Update last login time
         await storage.updateTeamMemberLastLogin(teamMember.id);
         
@@ -241,6 +251,7 @@ export async function setupAuth(app: Express) {
           }
         });
         return;
+        }
       }
     } catch (error) {
       console.error("Team member login check error:", error);
