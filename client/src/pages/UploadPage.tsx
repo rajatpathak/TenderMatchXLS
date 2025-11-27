@@ -54,18 +54,37 @@ export default function UploadPage() {
           try {
             const data = JSON.parse(event.data);
             if (data.type === 'complete') {
-              updateProgress(100, "✓ Complete - Finalizing...", {
+              completeUpload();
+              updateProgress(100, "✓ Upload Complete!", {
                 newCount: data.newCount,
                 duplicateCount: data.duplicateCount,
                 corrigendumCount: data.corrigendumCount,
                 gemCount: data.gemCount,
                 nonGemCount: data.nonGemCount,
               });
-              // Keep connection open for a moment to ensure final update is displayed
-              setTimeout(() => eventSource.close(), 1000);
+              
+              const newCount = data.newCount || 0;
+              const duplicates = data.duplicateCount || 0;
+              const corrigendum = data.corrigendumCount || 0;
+              
+              toast({
+                title: "Upload Complete",
+                description: `New: ${newCount} • Duplicates: ${duplicates} • Updates: ${corrigendum}`,
+              });
+              
+              // Keep progress visible for 15 seconds
+              setTimeout(() => clearUpload(), 15000);
+              
+              // Refresh data
+              queryClient.invalidateQueries({ queryKey: ["/api/tenders"] });
+              queryClient.invalidateQueries({ queryKey: ["/api/uploads"] });
+              queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+              setFile(null);
+              
+              eventSource.close();
             } else if (data.type === 'processing') {
               const percent = data.percentComplete || Math.round((data.processedRows / Math.max(data.totalRows, 1)) * 100);
-              updateProgress(Math.min(percent, 99), data.message || "Processing...", {
+              updateProgress(Math.min(percent, 99), `Processing (${percent}%)...`, {
                 gemCount: data.gemCount,
                 nonGemCount: data.nonGemCount,
                 newCount: data.newCount,
@@ -87,22 +106,15 @@ export default function UploadPage() {
       return uploadData;
     },
     onSuccess: (data) => {
-      completeUpload();
-      // Keep progress visible until user acknowledges or after very long delay
-      setTimeout(() => clearUpload(), 30000);
-      
-      const newCount = data.newCount || 0;
-      const duplicates = data.duplicateCount || 0;
-      const corrigendum = data.corrigendumCount || 0;
-      
-      toast({
-        title: "Upload Complete",
-        description: `New: ${newCount} • Duplicates: ${duplicates} • Updates: ${corrigendum}`,
+      // Do NOT call completeUpload() here - wait for SSE to finish
+      // Just show that upload started
+      updateProgress(10, "Processing upload...", {
+        gemCount: 0,
+        nonGemCount: 0,
+        newCount: 0,
+        duplicateCount: 0,
+        corrigendumCount: 0,
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/tenders"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/uploads"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
-      setFile(null);
     },
     onError: (error: Error) => {
       clearUpload();
