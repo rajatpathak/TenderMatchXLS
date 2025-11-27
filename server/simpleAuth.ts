@@ -28,6 +28,10 @@ async function verifyPassword(inputPassword: string): Promise<boolean> {
   const config = getAdminConfig();
   const isProduction = process.env.NODE_ENV === "production";
   
+  console.log(`🔐 Login attempt - Production mode: ${isProduction}`);
+  console.log(`🔐 Password hash configured: ${!!config.passwordHash}`);
+  console.log(`🔐 Hash starts with: ${config.passwordHash ? config.passwordHash.substring(0, 10) + '...' : 'N/A'}`);
+  
   // In production, ONLY accept bcrypt hash - reject plaintext passwords
   if (isProduction) {
     if (!config.passwordHash) {
@@ -35,7 +39,9 @@ async function verifyPassword(inputPassword: string): Promise<boolean> {
       return false;
     }
     try {
-      return await bcrypt.compare(inputPassword, config.passwordHash);
+      const result = await bcrypt.compare(inputPassword, config.passwordHash);
+      console.log(`🔐 Bcrypt comparison result: ${result}`);
+      return result;
     } catch (error) {
       console.error("Password verification error:", error);
       return false;
