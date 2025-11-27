@@ -46,7 +46,14 @@ The application will be available at `http://localhost:5000`
 
 ## Environment Variables
 
-Create a `.env` file or set these environment variables:
+**On VPS/Server:** Run the automated setup script:
+```bash
+npm run setup
+```
+
+This interactive script will prompt for database credentials and admin password, then automatically generate the `.env` file with proper security settings.
+
+**Manual Configuration:** Create a `.env` file or set these environment variables:
 
 ```env
 # Database (PostgreSQL)

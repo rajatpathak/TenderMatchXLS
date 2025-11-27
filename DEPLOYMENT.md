@@ -31,7 +31,23 @@ sudo -u postgres createuser tendermatch_user -P
 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE tendermatch TO tendermatch_user;"
 ```
 
-### 3. Configure Environment
+### 3. Configure Environment (Automated)
+
+```bash
+# Run the interactive setup script
+npm run setup
+```
+
+This will prompt you for:
+- Database host, port, name, user, password
+- Admin username, email, and password
+
+The script automatically:
+- Generates a secure session secret
+- Creates a bcrypt password hash
+- Creates the .env file with proper permissions (600)
+
+**Alternative: Manual Configuration**
 
 ```bash
 # Copy example environment file
