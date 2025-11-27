@@ -434,7 +434,12 @@ function sendProgressUpdate(uploadId: number) {
 
 async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, userId: string) {
   const progress = uploadProgressStore.get(uploadId);
-  if (!progress) return;
+  if (!progress) {
+    console.error(`[Upload ${uploadId}] Progress store not found!`);
+    return;
+  }
+
+  console.log(`[Upload ${uploadId}] Starting background processing with ${progress.totalRows} total rows`);
 
   try {
     // Get company criteria for matching
@@ -472,6 +477,7 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
       
       const sheet = workbook.Sheets[sheetName];
       const data = XLSX.utils.sheet_to_json(sheet);
+      console.log(`[Upload ${uploadId}] Processing sheet "${sheetName}" as ${tenderType} with ${data.length} rows`);
       
       for (let i = 0; i < data.length; i++) {
         try {
@@ -594,6 +600,7 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
     progress.newCount = newCount;
     progress.duplicateCount = duplicateCount;
     progress.corrigendumCount = corrigendumCount;
+    console.log(`[Upload ${uploadId}] Complete! New: ${newCount}, Duplicate: ${duplicateCount}, Corrigendum: ${corrigendumCount}`);
     sendProgressUpdate(uploadId);
 
     // Clean up after a delay
@@ -602,7 +609,7 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
     }, 60000);
 
   } catch (error: any) {
-    console.error('Error processing Excel:', error);
+    console.error(`[Upload ${uploadId}] Error processing Excel:`, error);
     progress.status = 'error';
     progress.message = error.message || 'Processing failed';
     sendProgressUpdate(uploadId);
