@@ -451,6 +451,9 @@ export function analyzeEligibility(
   // Check if tender matches core IT/Software services (from title or Similar Category)
   const isCoreServiceMatch = checkCoreServiceMatch(similarCategory);
   
+  // Define matchesCoreProjectTypes once for use throughout function
+  const matchesCoreProjectTypes = tags.length > 0 || isCoreServiceMatch || hasCoreITKeywords;
+  
   // Check for negative keywords - get ALL matches, not just the first one
   const allMatchedKeywords = checkAllNegativeKeywords(eligibilityText, negativeKeywords);
   
@@ -487,8 +490,6 @@ export function analyzeEligibility(
     
     // If no negative keyword is in the title, check if it's a non-IT tender
     // If non-IT, mark as not_relevant (the negative keyword in criteria text is disqualifying)
-    const matchesCoreProjectTypes = tags.length > 0 || isCoreServiceMatch || hasCoreITKeywords;
-    
     if (!matchesCoreProjectTypes) {
       return {
         matchPercentage: 0,
