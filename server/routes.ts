@@ -271,6 +271,9 @@ const uploadProgressStore = new Map<number, {
   gemCount: number;
   nonGemCount: number;
   failedCount: number;
+  newCount: number;
+  duplicateCount: number;
+  corrigendumCount: number;
   totalRows: number;
   currentSheet: string;
   processedRows: number;
@@ -445,6 +448,9 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
     let gemCount = 0;
     let nonGemCount = 0;
     let failedCount = 0;
+    let newCount = 0;
+    let duplicateCount = 0;
+    let corrigendumCount = 0;
 
     // Process all sheets
     for (const sheetName of workbook.SheetNames) {
@@ -515,8 +521,13 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
                   newValue: change.newValue,
                 });
               }
+              corrigendumCount++;
+              progress.corrigendumCount = corrigendumCount;
+            } else {
+              // If no changes, it's a duplicate
+              duplicateCount++;
+              progress.duplicateCount = duplicateCount;
             }
-            // If no changes, skip - tender already exists with same data
           } else {
             // Create new tender
             const fullTenderData: InsertTender = {
@@ -534,6 +545,8 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
             };
             
             await storage.createTender(fullTenderData);
+            newCount++;
+            progress.newCount = newCount;
           }
           
           if (tenderType === 'gem') {
@@ -563,6 +576,9 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
       totalTenders: gemCount + nonGemCount,
       gemCount,
       nonGemCount,
+      duplicateCount,
+      corrigendumCount,
+      newCount,
     });
 
     // Mark as complete
@@ -570,6 +586,9 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
     progress.gemCount = gemCount;
     progress.nonGemCount = nonGemCount;
     progress.failedCount = failedCount;
+    progress.newCount = newCount;
+    progress.duplicateCount = duplicateCount;
+    progress.corrigendumCount = corrigendumCount;
     sendProgressUpdate(uploadId);
 
     // Clean up after a delay
@@ -882,6 +901,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         gemCount: 0,
         nonGemCount: 0,
         failedCount: 0,
+        newCount: 0,
+        duplicateCount: 0,
+        corrigendumCount: 0,
         totalRows,
         currentSheet: '',
         processedRows: 0,
