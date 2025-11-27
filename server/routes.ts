@@ -232,6 +232,21 @@ function parseTenderFromRow(row: any, tenderType: 'gem' | 'non_gem', sheet?: XLS
     turnoverRequirement = parseNumber(findColumn(row, 'turnover', 'turnoverrequirement', 'annualturnover', 'minturnover'))?.toString() || null;
   }
   
+  // Get location - use column position based on tender type
+  // Non-GEM: Column H, GEM: Column Z
+  let locationValue = null;
+  if (sheet && rowIndex !== undefined) {
+    if (tenderType === 'non_gem') {
+      locationValue = getColumnByLetter(sheet, rowIndex, 'H');
+    } else if (tenderType === 'gem') {
+      locationValue = getColumnByLetter(sheet, rowIndex, 'Z');
+    }
+  }
+  // Fallback to name-based lookup if column-based didn't find anything
+  if (!locationValue) {
+    locationValue = findColumn(row, 'location', 'place', 'city', 'state', 'region', 'area') || null;
+  }
+
   // Get eligibility criteria - use column position based on tender type
   // Non-GEM: Column N, GEM: Column AU
   let eligibilityCriteria = null;
@@ -256,7 +271,7 @@ function parseTenderFromRow(row: any, tenderType: 'gem' | 'non_gem', sheet?: XLS
     title: fullTitle,
     department: findColumn(row, 'department', 'dept', 'ministry') || null,
     organization: findColumn(row, 'organization', 'org', 'company', 'buyer', 'buyerorg') || null,
-    location: findColumn(row, 'location', 'place', 'city', 'state', 'region', 'area') || null,
+    location: locationValue ? String(locationValue).trim() : null,
     estimatedValue: parseNumber(findColumn(row, 'estimatedvalue', 'value', 'amount', 'budget', 'cost', 'estimatedcost', 'tendervalue'))?.toString() || null,
     emdAmount: parseNumber(findColumn(row, 'emd', 'emdamount', 'earnestmoney', 'earnestmoneydeposit', 'emdr', 'bidsecrurity'))?.toString() || null,
     turnoverRequirement,

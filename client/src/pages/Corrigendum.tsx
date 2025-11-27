@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,8 +19,17 @@ import {
   Plus,
   Minus,
   RefreshCw,
-  Eye
+  Eye,
+  MapPin,
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import type { Tender, CorrigendumChange } from "@shared/schema";
 
 interface CorrigendumWithChanges extends Tender {
@@ -30,10 +39,40 @@ interface CorrigendumWithChanges extends Tender {
 
 export default function Corrigendum() {
   const [selectedCorrigendum, setSelectedCorrigendum] = useState<CorrigendumWithChanges | null>(null);
+  const [selectedLocation, setSelectedLocation] = useState("all");
+  const [deadlineFrom, setDeadlineFrom] = useState("");
+  const [deadlineTo, setDeadlineTo] = useState("");
 
   const { data: corrigendums = [], isLoading } = useQuery<CorrigendumWithChanges[]>({
     queryKey: ["/api/tenders/corrigendum"],
   });
+
+  const { data: locations = [] } = useQuery<string[]>({
+    queryKey: ["/api/tenders/locations"],
+  });
+
+  const filteredCorrigendums = useMemo(() => {
+    return corrigendums.filter((tender) => {
+      if (selectedLocation !== "all" && tender.location !== selectedLocation) {
+        return false;
+      }
+      if (deadlineFrom) {
+        const fromDate = new Date(deadlineFrom);
+        const tenderDeadline = tender.submissionDeadline ? new Date(tender.submissionDeadline) : null;
+        if (!tenderDeadline || tenderDeadline < fromDate) {
+          return false;
+        }
+      }
+      if (deadlineTo) {
+        const toDate = new Date(deadlineTo);
+        const tenderDeadline = tender.submissionDeadline ? new Date(tender.submissionDeadline) : null;
+        if (!tenderDeadline || tenderDeadline > toDate) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [corrigendums, selectedLocation, deadlineFrom, deadlineTo]);
 
   const formatDate = (date: Date | string | null | undefined) => {
     if (!date) return "—";
@@ -82,6 +121,42 @@ export default function Corrigendum() {
         <p className="text-sm text-muted-foreground mt-1">
           Track changes in updated tenders compared to their original versions
         </p>
+
+        <div className="flex items-center gap-3 mt-4 flex-wrap">
+          <Select value={selectedLocation} onValueChange={setSelectedLocation}>
+            <SelectTrigger className="w-40" data-testid="filter-location">
+              <MapPin className="w-4 h-4 mr-2" />
+              <SelectValue placeholder="Location..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Locations</SelectItem>
+              {locations.map((loc) => (
+                <SelectItem key={loc} value={loc}>
+                  {loc}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <div className="flex items-center gap-1">
+            <Calendar className="w-4 h-4 text-muted-foreground" />
+            <Input
+              type="date"
+              value={deadlineFrom}
+              onChange={(e) => setDeadlineFrom(e.target.value)}
+              className="px-2 py-1 text-sm w-32"
+              data-testid="filter-deadline-from"
+            />
+            <span className="text-xs text-muted-foreground px-1">to</span>
+            <Input
+              type="date"
+              value={deadlineTo}
+              onChange={(e) => setDeadlineTo(e.target.value)}
+              className="px-2 py-1 text-sm w-32"
+              data-testid="filter-deadline-to"
+            />
+          </div>
+        </div>
       </div>
 
       {isLoading ? (
@@ -101,7 +176,7 @@ export default function Corrigendum() {
             </Card>
           ))}
         </div>
-      ) : corrigendums.length === 0 ? (
+      ) : filteredCorrigendums.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-64 text-center">
           <FileStack className="w-12 h-12 text-muted-foreground/50 mb-4" />
           <h3 className="text-lg font-medium text-foreground mb-1">No corrigendums found</h3>

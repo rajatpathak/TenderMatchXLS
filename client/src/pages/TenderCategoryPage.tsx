@@ -16,7 +16,16 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  MapPin,
+  Calendar,
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { Tender, TenderAssignment, TeamMember } from "@shared/schema";
 
 interface TenderCategoryPageProps {
@@ -61,12 +70,19 @@ export default function TenderCategoryPage({ status, title, description }: Tende
   const [currentPage, setCurrentPage] = useState(1);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [tenderToAssign, setTenderToAssign] = useState<Tender | null>(null);
+  const [selectedLocation, setSelectedLocation] = useState("all");
+  const [deadlineFrom, setDeadlineFrom] = useState("");
+  const [deadlineTo, setDeadlineTo] = useState("");
 
   const { user } = useAuth();
 
   const { data: tenders = [], isLoading, isFetching } = useQuery<Tender[]>({
     queryKey: ["/api/tenders/status", status],
     staleTime: 30000,
+  });
+
+  const { data: locations = [] } = useQuery<string[]>({
+    queryKey: ["/api/tenders/locations"],
   });
 
   const { data: currentTeamMember } = useQuery<Omit<TeamMember, "password">>({
@@ -92,18 +108,43 @@ export default function TenderCategoryPage({ status, title, description }: Tende
   };
 
   const filteredTenders = useMemo(() => {
-    if (!searchQuery) return tenders;
-    
-    const query = searchQuery.toLowerCase();
     return tenders.filter((tender) => {
-      return (
-        tender.t247Id.toLowerCase().includes(query) ||
-        tender.title?.toLowerCase().includes(query) ||
-        tender.department?.toLowerCase().includes(query) ||
-        tender.organization?.toLowerCase().includes(query)
-      );
+      // Search filter
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        if (!(tender.t247Id.toLowerCase().includes(query) ||
+          tender.title?.toLowerCase().includes(query) ||
+          tender.department?.toLowerCase().includes(query) ||
+          tender.organization?.toLowerCase().includes(query))) {
+          return false;
+        }
+      }
+
+      // Location filter
+      if (selectedLocation !== "all" && tender.location !== selectedLocation) {
+        return false;
+      }
+
+      // Submission deadline filter
+      if (deadlineFrom) {
+        const fromDate = new Date(deadlineFrom);
+        const tenderDeadline = tender.submissionDeadline ? new Date(tender.submissionDeadline) : null;
+        if (!tenderDeadline || tenderDeadline < fromDate) {
+          return false;
+        }
+      }
+
+      if (deadlineTo) {
+        const toDate = new Date(deadlineTo);
+        const tenderDeadline = tender.submissionDeadline ? new Date(tender.submissionDeadline) : null;
+        if (!tenderDeadline || tenderDeadline > toDate) {
+          return false;
+        }
+      }
+
+      return true;
     });
-  }, [tenders, searchQuery]);
+  }, [tenders, searchQuery, selectedLocation, deadlineFrom, deadlineTo]);
 
   const totalPages = Math.ceil(filteredTenders.length / ITEMS_PER_PAGE);
   
@@ -138,7 +179,7 @@ export default function TenderCategoryPage({ status, title, description }: Tende
             </div>
           </div>
           
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
@@ -147,6 +188,40 @@ export default function TenderCategoryPage({ status, title, description }: Tende
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9 w-[300px]"
                 data-testid="input-search"
+              />
+            </div>
+            
+            <Select value={selectedLocation} onValueChange={setSelectedLocation}>
+              <SelectTrigger className="w-40" data-testid="filter-location">
+                <MapPin className="w-4 h-4 mr-2" />
+                <SelectValue placeholder="Location..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Locations</SelectItem>
+                {locations.map((loc) => (
+                  <SelectItem key={loc} value={loc}>
+                    {loc}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <div className="flex items-center gap-1">
+              <Calendar className="w-4 h-4 text-muted-foreground" />
+              <input
+                type="date"
+                value={deadlineFrom}
+                onChange={(e) => setDeadlineFrom(e.target.value)}
+                className="px-2 py-1 border border-border rounded text-sm"
+                data-testid="filter-deadline-from"
+              />
+              <span className="text-xs text-muted-foreground px-1">to</span>
+              <input
+                type="date"
+                value={deadlineTo}
+                onChange={(e) => setDeadlineTo(e.target.value)}
+                className="px-2 py-1 border border-border rounded text-sm"
+                data-testid="filter-deadline-to"
               />
             </div>
           </div>
