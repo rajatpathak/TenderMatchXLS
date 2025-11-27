@@ -461,36 +461,22 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
     let corrigendumCount = 0;
     let processedCount = 0;
 
-    // Collect all tenders to process
-    const allTenders: any[] = [];
+    // Process all sheets row by row
     for (const sheetName of workbook.SheetNames) {
       const normalizedName = sheetName.toLowerCase().replace(/[-_\s]/g, '');
       const tenderType: 'gem' | 'non_gem' = (normalizedName.includes('gem') && !normalizedName.includes('nongem') && !normalizedName.includes('non')) ? 'gem' : 'non_gem';
       
       const sheet = workbook.Sheets[sheetName];
       const data = XLSX.utils.sheet_to_json(sheet);
-      console.log(`[Upload ${uploadId}] Sheet "${sheetName}": ${data.length} rows (${tenderType})`);
+      console.log(`[Upload ${uploadId}] Processing "${sheetName}": ${data.length} rows (${tenderType})`);
       
       for (let i = 0; i < data.length; i++) {
-        allTenders.push({ row: data[i], sheetName, tenderType, rowIndex: i + 2 });
-      }
-    }
-
-    console.log(`[Upload ${uploadId}] Total tenders to process: ${allTenders.length}`);
-
-    // Process in batches to avoid overwhelming the database
-    const BATCH_SIZE = 50;
-    for (let batchStart = 0; batchStart < allTenders.length; batchStart += BATCH_SIZE) {
-      const batchEnd = Math.min(batchStart + BATCH_SIZE, allTenders.length);
-      const batch = allTenders.slice(batchStart, batchEnd);
-
-      for (const item of batch) {
         try {
-          const { row, sheetName, tenderType, rowIndex } = item;
+          const row = data[i];
+          const rowIndex = i + 2;
           
-          const tenderData = parseTenderFromRow(row, tenderType, workbook.Sheets[sheetName], rowIndex);
+          const tenderData = parseTenderFromRow(row, tenderType, sheet, rowIndex);
           if (!tenderData?.t247Id) {
-            console.warn(`[Upload ${uploadId}] Row ${rowIndex}: missing T247 ID`);
             failedCount++;
             continue;
           }
@@ -552,22 +538,21 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
 
           processedCount++;
         } catch (err) {
-          console.error(`[Upload ${uploadId}] Error processing tender:`, err);
+          console.error(`[Upload ${uploadId}] Row ${i + 2} error:`, (err as any).message);
           failedCount++;
         }
+
+        // Update progress every 50 rows
+        if (processedCount % 50 === 0) {
+          progress.processedRows = processedCount;
+          progress.gemCount = gemCount;
+          progress.nonGemCount = nonGemCount;
+          progress.newCount = newCount;
+          progress.duplicateCount = duplicateCount;
+          progress.corrigendumCount = corrigendumCount;
+          sendProgressUpdate(uploadId);
+        }
       }
-
-      // Update progress after each batch
-      progress.processedRows = processedCount;
-      progress.gemCount = gemCount;
-      progress.nonGemCount = nonGemCount;
-      progress.newCount = newCount;
-      progress.duplicateCount = duplicateCount;
-      progress.corrigendumCount = corrigendumCount;
-      sendProgressUpdate(uploadId);
-
-      // Yield to event loop
-      await new Promise(resolve => setImmediate(resolve));
     }
 
     // Final update to database
