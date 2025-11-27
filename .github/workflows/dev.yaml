@@ -72,7 +72,7 @@ jobs:
             git reset --hard origin/main
             git pull origin main
 
-            cp .env.example .env
+            # cp .env.example .env
             
             # #sed -i "s/^DB_HOST=.*/DB_HOST=${DB_HOST}/" .env
             # sed -i "s/^DB_DATABASE=.*/DB_DATABASE=${{ secrets.DB_DATABASE }}/" .env
@@ -82,11 +82,11 @@ jobs:
             sudo chown -R www-data:www-data ${{ env.DEPLOY_DIR }}
             sudo chmod -R 775 ${{ env.DEPLOY_DIR }}
 
-            export DATABASE_URL="postgresql://tendermatchxls_user:Wj7fHBY9Ll0Gi@localhost:5432/tendermatchxls"
-            export ADMIN_PASSWORD_HASH="your-super-secure-session-secret-min-32-chars"
-            export SESSION_SECRET="your-secret-key-min-32-chars"
-            export PORT="9123"
-            export NODE_ENV="production"
+            # export DATABASE_URL="postgresql://tendermatchxls_user:Wj7fHBY9Ll0Gi@localhost:5432/tendermatchxls"
+            # export ADMIN_PASSWORD_HASH="your-super-secure-session-secret-min-32-chars"
+            # export SESSION_SECRET="your-secret-key-min-32-chars"
+            # export PORT="9123"
+            # export NODE_ENV="production"
 
             # Install dependencies
             npm install
