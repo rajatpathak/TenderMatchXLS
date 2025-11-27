@@ -1,0 +1,153 @@
+name: TenderMatchXLS
+
+on:
+  push:
+    branches:
+      - main
+
+# 🚦 Concurrency control: cancel old runs on same branch/ref
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REPO_NAME: ${{ github.repository }}
+
+jobs:
+#   test:
+#     name: Run Tests
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v3
+
+#       - name: Setup PHP
+#         uses: shivammathur/setup-php@v2
+#         with:
+#           php-version: '8.2'
+#           tools: composer:v2
+
+#       - name: Cache Composer dependencies
+#         uses: actions/cache@v3
+#         with:
+#           path: vendor
+#           key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+#           restore-keys: ${{ runner.os }}-composer-
+
+#       - name: Install dependencies
+#         run: composer install --prefer-dist --no-progress --no-interaction
+
+#       - name: Run Laravel tests
+#         run: php artisan test
+
+  deploy:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    #needs: [test]
+    environment: STAGING.47
+    env:
+      APP_NAME: "TenderMatchXLS"
+      KEY_NAME: "TenderMatchXLS" 
+      DEPLOY_DIR: "/var/www/html/TenderMatchXLS"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Deploy to server (Zero Downtime)
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          password: ${{ secrets.SSH_PASS }}
+          script: |
+            cd ${{ env.DEPLOY_DIR }}
+            
+            eval "$(ssh-agent -s)"
+            ssh-add ~/.ssh/${{ env.KEY_NAME }}
+            # Pull latest code
+            #git clone --branch develop https://github.com/${{ github.repository }} . 
+            git config --global --add safe.directory ${{ env.DEPLOY_DIR }}
+            git fetch origin
+            git reset --hard origin/main
+            git pull origin main
+
+            cp .env.example .env
+            
+            # #sed -i "s/^DB_HOST=.*/DB_HOST=${DB_HOST}/" .env
+            # sed -i "s/^DB_DATABASE=.*/DB_DATABASE=${{ secrets.DB_DATABASE }}/" .env
+            # sed -i "s/^DB_USERNAME=.*/DB_USERNAME=${{ secrets.DB_USERNAME }}/" .env
+            # sed -i "s/^DB_PASSWORD=.*/DB_PASSWORD=${{ secrets.DB_PASSWORD }}/" .env  
+            # Set permissions
+            sudo chown -R www-data:www-data ${{ env.DEPLOY_DIR }}
+            sudo chmod -R 775 ${{ env.DEPLOY_DIR }}
+
+            export DATABASE_URL="postgresql://tendermatchxls_user:Wj7fHBY9Ll0Gi@localhost:5432/tendermatchxls"
+            export ADMIN_PASSWORD_HASH="your-super-secure-session-secret-min-32-chars"
+            export SESSION_SECRET="your-secret-key-min-32-chars"
+            export PORT="9123"
+            export NODE_ENV="production"
+
+            # Install dependencies
+            npm install
+            npm run build
+            pm2 restart tendermatch
+            pm2 save
+
+
+
+#   notify-teams:
+#     name: Notify Teams
+#     runs-on: ubuntu-latest
+#     environment: STAGING
+#     needs: [deploy]
+#     if: always()
+
+#     steps:
+#       - name: Set Color and Message for Success
+#         if: ${{ needs.deploy.result == 'success' }}
+#         run: |
+#           echo "COLOR=success" >> $GITHUB_ENV
+#           echo "MESSAGE=✅ Pipeline succeeded for repository $REPO_NAME!" >> $GITHUB_ENV
+
+#       - name: Set Color and Message for Failure
+#         if: ${{ needs.deploy.result != 'success' }}
+#         run: |
+#           echo "COLOR=failure" >> $GITHUB_ENV
+#           echo "MESSAGE=❌ Pipeline failed for repository $REPO_NAME!" >> $GITHUB_ENV
+
+#       - name: Send Notification to Teams
+#         uses: mikesprague/teams-incoming-webhook-action@v1.13.5
+#         with:
+#           github-token: ${{ github.token }}
+#           webhook-url: ${{ secrets.TEAMS_WEBHOOK_URL }}
+#           title: "Pipeline Notification for ${{ env.REPO_NAME }}"
+#           message: |
+#             ${{ env.MESSAGE }}
+#             Commit: ${{ github.sha }}
+#             By: ${{ github.actor }}
+#             Logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+#             Environment: STAGING
+#           deploy-card: true
+#           color: ${{ env.COLOR }}
+
+# # https://github.com/appleboy/telegram-action
+#       - name: send telegram message on push
+#         uses: appleboy/telegram-action@master
+#         with:
+#           to: ${{ secrets.TELEGRAM_ID }}
+#           token: ${{ secrets.TELEGRAM_TOKEN }}
+#           message: |
+#             🚀 *GitHub Actions Notification* 🚀
+            
+#             👤 Author: ${{ github.actor }}
+#             📝 Commit: ${{ github.event.commits[0].message }}
+#             🌿 Branch: ${{ github.ref_name }}
+#             📦 Repository: ${{ github.repository }}
+            
+#             🔍 Workflow: ${{ github.workflow }}
+#             📌 Job: ${{ github.job }}
+#             ✅ Status: ${{ job.status }}
+            
+#             🔗 [View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            
