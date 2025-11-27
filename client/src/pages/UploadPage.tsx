@@ -46,13 +46,15 @@ export default function UploadPage() {
       return response.json();
     },
     onSuccess: (data) => {
-      updateProgress(100, "Complete");
+      const duplicates = data.duplicateCount || 0;
+      const added = data.totalTenders || 0;
+      updateProgress(100, "Complete", duplicates, added);
       completeUpload();
       setTimeout(() => clearUpload(), 2000);
       
       toast({
         title: "Upload Successful",
-        description: `Processed ${data.totalTenders} tenders (${data.gemCount} GEM, ${data.nonGemCount} Non-GEM)`,
+        description: `Added ${added} tenders (${data.gemCount} GEM, ${data.nonGemCount} Non-GEM) • Skipped ${duplicates} duplicates`,
       });
       queryClient.invalidateQueries({ queryKey: ["/api/tenders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/uploads"] });

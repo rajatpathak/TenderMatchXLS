@@ -41,7 +41,14 @@ function HeaderContent() {
       {upload?.isUploading && (
         <div className="flex-1 max-w-xs flex items-center gap-2">
           <div className="flex-1 min-w-0">
-            <p className="text-xs text-muted-foreground truncate">{upload.fileName}</p>
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-muted-foreground truncate">{upload.fileName}</p>
+              {upload.duplicates !== undefined && upload.added !== undefined && (
+                <span className="text-xs text-muted-foreground font-mono whitespace-nowrap">
+                  +{upload.added} | -{upload.duplicates}
+                </span>
+              )}
+            </div>
             <Progress value={upload.progress} className="h-1 mt-1" />
           </div>
           <span className="text-xs text-muted-foreground font-mono whitespace-nowrap">{upload.progress}%</span>

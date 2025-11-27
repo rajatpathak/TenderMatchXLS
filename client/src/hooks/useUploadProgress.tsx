@@ -5,12 +5,14 @@ interface UploadProgress {
   isUploading: boolean;
   progress: number;
   message: string;
+  duplicates?: number;
+  added?: number;
 }
 
 interface UploadProgressContextType {
   upload: UploadProgress | null;
   startUpload: (fileName: string) => void;
-  updateProgress: (progress: number, message: string) => void;
+  updateProgress: (progress: number, message: string, duplicates?: number, added?: number) => void;
   completeUpload: () => void;
   clearUpload: () => void;
 }
@@ -29,8 +31,8 @@ export function UploadProgressProvider({ children }: { children: ReactNode }): J
     });
   }, []);
 
-  const updateProgress = useCallback((progress: number, message: string) => {
-    setUpload((prev) => (prev ? { ...prev, progress: Math.min(progress, 99), message } : null));
+  const updateProgress = useCallback((progress: number, message: string, duplicates?: number, added?: number) => {
+    setUpload((prev) => (prev ? { ...prev, progress: Math.min(progress, 99), message, duplicates, added } : null));
   }, []);
 
   const completeUpload = useCallback(() => {
