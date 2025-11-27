@@ -38,7 +38,7 @@ import {
   HardDrive,
   Users,
   Layers,
-  Code
+  Code,
   MapPin,
   Calendar
 } from "lucide-react";
