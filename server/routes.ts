@@ -882,6 +882,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get corrigendum changes for a tender
+  app.get('/api/tenders/:id/corrigendum-changes', isAuthenticated, async (req, res) => {
+    try {
+      const changes = await storage.getChangesForTender(parseInt(req.params.id));
+      res.json(changes);
+    } catch (error) {
+      console.error("Error fetching corrigendum changes:", error);
+      res.status(500).json({ message: "Failed to fetch corrigendum changes" });
+    }
+  });
+
   // SSE endpoint for upload progress
   app.get('/api/upload-progress/:uploadId', isAuthenticated, (req, res) => {
     const uploadId = parseInt(req.params.uploadId);
