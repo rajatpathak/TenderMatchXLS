@@ -929,7 +929,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Excel upload endpoint
+  // Excel upload endpoint - uses background processing for real-time progress
   app.post('/api/upload', isAuthenticated, upload.single('file'), async (req: any, res) => {
     try {
       if (!req.file) {
@@ -939,6 +939,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user.id;
       const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
       
+      // Count total rows across all sheets
+      let totalRows = 0;
+      for (const sheetName of workbook.SheetNames) {
+        const sheet = workbook.Sheets[sheetName];
+        const data = XLSX.utils.sheet_to_json(sheet);
+        totalRows += data.length;
+      }
+
       // Create upload record
       const uploadRecord = await storage.createExcelUpload({
         fileName: req.file.originalname,
@@ -948,230 +956,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
         nonGemCount: 0,
       });
 
-      // Get company criteria for matching
-      let criteria = await storage.getCompanyCriteria();
-      if (!criteria) {
-        // Create default criteria
-        criteria = await storage.upsertCompanyCriteria({
-          turnoverCr: "4",
-          projectTypes: ['Software', 'Website', 'Mobile', 'IT Projects', 'Manpower Deployment'],
-          updatedBy: userId,
-        });
-      }
-      
-      // Get negative keywords for filtering
-      const negativeKeywords = await storage.getNegativeKeywords();
-
-      let gemCount = 0;
-      let nonGemCount = 0;
-      let eligibleCount = 0;
-      let notEligibleCount = 0;
-      let notRelevantCount = 0;
-      let manualReviewCount = 0;
-      let missedCount = 0;
-      const processedTenders: any[] = [];
-
-      // Process all sheets
-      for (const sheetName of workbook.SheetNames) {
-        const normalizedName = sheetName.toLowerCase().replace(/[-_\s]/g, '');
-        
-        // Determine tender type from sheet name
-        let tenderType: 'gem' | 'non_gem' = 'non_gem';
-        if (normalizedName.includes('gem') && !normalizedName.includes('nongem') && !normalizedName.includes('non')) {
-          tenderType = 'gem';
-        }
-        
-        console.log(`Processing sheet: ${sheetName} as ${tenderType}`);
-        
-        const sheet = workbook.Sheets[sheetName];
-        const data = XLSX.utils.sheet_to_json(sheet);
-        
-        console.log(`Found ${data.length} rows in sheet ${sheetName}`);
-        
-        for (let i = 0; i < data.length; i++) {
-          const row = data[i];
-          // Row index in Excel is 1-based, and first row is header, so data row 0 is Excel row 2
-          const excelRowIndex = i + 2;
-          const tenderData = parseTenderFromRow(row, tenderType, sheet, excelRowIndex);
-          
-          // Check for duplicate T247 ID (corrigendum detection)
-          const existingTender = await storage.getTenderByT247Id(tenderData.t247Id!);
-          
-          // Use Excel exemption flags if available, otherwise analyze from text
-          const excelMsme = tenderData.excelMsmeExemption;
-          const excelStartup = tenderData.excelStartupExemption;
-          
-          // Analyze eligibility with Excel exemption flags and negative keywords
-          const matchResult = analyzeEligibility(tenderData, criteria!, negativeKeywords, excelMsme, excelStartup);
-          
-          // Remove temporary Excel fields before inserting
-          const { excelMsmeExemption, excelStartupExemption, ...tenderInsertData } = tenderData;
-          
-          if (existingTender) {
-            // UPDATE existing tender instead of creating duplicate
-            const changes = detectCorrigendumChanges(existingTender, tenderInsertData);
-            
-            if (changes.length > 0) {
-              const updatedTender = await storage.updateTender(existingTender.id, {
-                ...tenderInsertData,
-                uploadId: uploadRecord.id,
-                matchPercentage: matchResult.matchPercentage,
-                isMsmeExempted: matchResult.isMsmeExempted,
-                isStartupExempted: matchResult.isStartupExempted,
-                tags: matchResult.tags,
-                analysisStatus: matchResult.analysisStatus,
-                eligibilityStatus: existingTender.isManualOverride ? existingTender.eligibilityStatus : matchResult.eligibilityStatus,
-                notRelevantKeyword: matchResult.notRelevantKeyword,
-                isCorrigendum: true,
-                isMissed: false,
-                missedAt: null,
-              });
-              
-              for (const change of changes) {
-                await storage.createCorrigendumChange({
-                  tenderId: existingTender.id,
-                  originalTenderId: existingTender.id,
-                  fieldName: change.fieldName,
-                  oldValue: change.oldValue,
-                  newValue: change.newValue,
-                });
-              }
-              
-              processedTenders.push(updatedTender);
-            }
-          } else {
-            const fullTenderData: InsertTender = {
-              ...tenderInsertData,
-              uploadId: uploadRecord.id,
-              matchPercentage: matchResult.matchPercentage,
-              isMsmeExempted: matchResult.isMsmeExempted,
-              isStartupExempted: matchResult.isStartupExempted,
-              tags: matchResult.tags,
-              analysisStatus: matchResult.analysisStatus,
-              eligibilityStatus: matchResult.eligibilityStatus,
-              notRelevantKeyword: matchResult.notRelevantKeyword,
-              isCorrigendum: false,
-              originalTenderId: null,
-            };
-            
-            const createdTender = await storage.createTender(fullTenderData);
-            processedTenders.push(createdTender);
-            
-            // Count by status
-            const status = matchResult.eligibilityStatus;
-            if (status === 'eligible') eligibleCount++;
-            else if (status === 'not_eligible') notEligibleCount++;
-            else if (status === 'not_relevant') notRelevantCount++;
-            else if (status === 'manual_review') manualReviewCount++;
-            else if (status === 'missed') missedCount++;
-          }
-          
-          if (tenderType === 'gem') {
-            gemCount++;
-          } else {
-            nonGemCount++;
-          }
-        }
-      }
-
-      // If no standard sheets found, try to process the first sheet
-      if (processedTenders.length === 0 && workbook.SheetNames.length > 0) {
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const data = XLSX.utils.sheet_to_json(sheet);
-        
-        for (let i = 0; i < data.length; i++) {
-          const row = data[i];
-          const excelRowIndex = i + 2;
-          const tenderData = parseTenderFromRow(row, 'non_gem', sheet, excelRowIndex);
-          
-          const existingTender = await storage.getTenderByT247Id(tenderData.t247Id!);
-          const matchResult = analyzeEligibility(tenderData, criteria!, negativeKeywords);
-          
-          if (existingTender) {
-            // UPDATE existing tender instead of creating duplicate
-            const changes = detectCorrigendumChanges(existingTender, tenderData);
-            
-            if (changes.length > 0) {
-              const updatedTender = await storage.updateTender(existingTender.id, {
-                ...tenderData,
-                uploadId: uploadRecord.id,
-                matchPercentage: matchResult.matchPercentage,
-                isMsmeExempted: matchResult.isMsmeExempted,
-                isStartupExempted: matchResult.isStartupExempted,
-                tags: matchResult.tags,
-                analysisStatus: matchResult.analysisStatus,
-                eligibilityStatus: existingTender.isManualOverride ? existingTender.eligibilityStatus : matchResult.eligibilityStatus,
-                notRelevantKeyword: matchResult.notRelevantKeyword,
-                isCorrigendum: true,
-                isMissed: false,
-                missedAt: null,
-              });
-              
-              for (const change of changes) {
-                await storage.createCorrigendumChange({
-                  tenderId: existingTender.id,
-                  originalTenderId: existingTender.id,
-                  fieldName: change.fieldName,
-                  oldValue: change.oldValue,
-                  newValue: change.newValue,
-                });
-              }
-              
-              processedTenders.push(updatedTender);
-            }
-          } else {
-            const fullTenderData: InsertTender = {
-              ...tenderData,
-              uploadId: uploadRecord.id,
-              matchPercentage: matchResult.matchPercentage,
-              isMsmeExempted: matchResult.isMsmeExempted,
-              isStartupExempted: matchResult.isStartupExempted,
-              tags: matchResult.tags,
-              analysisStatus: matchResult.analysisStatus,
-              eligibilityStatus: matchResult.eligibilityStatus,
-              notRelevantKeyword: matchResult.notRelevantKeyword,
-              isCorrigendum: false,
-              originalTenderId: null,
-            };
-            
-            const createdTender = await storage.createTender(fullTenderData);
-            processedTenders.push(createdTender);
-            
-            // Count by status
-            const status = matchResult.eligibilityStatus;
-            if (status === 'eligible') eligibleCount++;
-            else if (status === 'not_eligible') notEligibleCount++;
-            else if (status === 'not_relevant') notRelevantCount++;
-            else if (status === 'manual_review') manualReviewCount++;
-            else if (status === 'missed') missedCount++;
-          }
-          
-          nonGemCount++;
-        }
-      }
-
-      // Update upload record with counts
-      await storage.updateExcelUpload(uploadRecord.id, {
-        totalTenders: gemCount + nonGemCount,
-        gemCount,
-        nonGemCount,
-        eligibleCount,
-        notEligibleCount,
-        notRelevantCount,
-        manualReviewCount,
-        missedCount,
+      // Initialize progress tracking
+      uploadProgressStore.set(uploadRecord.id, {
+        gemCount: 0,
+        nonGemCount: 0,
+        failedCount: 0,
+        newCount: 0,
+        duplicateCount: 0,
+        corrigendumCount: 0,
+        totalRows,
+        currentSheet: '',
+        processedRows: 0,
+        startTime: Date.now(),
+        status: 'processing',
+        clients: new Set(),
       });
 
-      res.json({
-        success: true,
-        uploadId: uploadRecord.id,
-        totalTenders: gemCount + nonGemCount,
-        gemCount,
-        nonGemCount,
-      });
+      // Return immediately with upload ID so client can connect to SSE
+      res.json({ uploadId: uploadRecord.id });
+
+      // Process in background
+      processExcelAsync(workbook, uploadRecord.id, userId);
+
     } catch (error) {
-      console.error("Error processing upload:", error);
-      res.status(500).json({ message: "Failed to process file" });
+      console.error("Error starting upload:", error);
+      res.status(500).json({ message: "Failed to start upload" });
     }
   });
 
