@@ -39,7 +39,16 @@ import {
   Users,
   Layers,
   Code
+  MapPin,
+  Calendar
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { Tender } from "@shared/schema";
 
 const projectTypeFilters = [
@@ -67,6 +76,9 @@ export default function Dashboard() {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showFilters, setShowFilters] = useState(true);
   const [projectTypeFilter, setProjectTypeFilter] = useState("all");
+  const [selectedLocation, setSelectedLocation] = useState("all");
+  const [deadlineFrom, setDeadlineFrom] = useState("");
+  const [deadlineTo, setDeadlineTo] = useState("");
   const { toast } = useToast();
 
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
@@ -75,6 +87,10 @@ export default function Dashboard() {
 
   const { data: tenders = [], isLoading: tendersLoading } = useQuery<Tender[]>({
     queryKey: ["/api/tenders"],
+  });
+
+  const { data: locations = [] } = useQuery<string[]>({
+    queryKey: ["/api/tenders/locations"],
   });
 
   const deleteAllMutation = useMutation({
@@ -171,6 +187,28 @@ export default function Dashboard() {
       if (filters.tags.length > 0) {
         const tenderTags = tender.tags || [];
         if (!filters.tags.some(tag => tenderTags.includes(tag))) {
+          return false;
+        }
+      }
+
+      // Location filter
+      if (selectedLocation !== "all" && tender.location !== selectedLocation) {
+        return false;
+      }
+
+      // Submission deadline filter
+      if (deadlineFrom) {
+        const fromDate = new Date(deadlineFrom);
+        const tenderDeadline = tender.submissionDeadline ? new Date(tender.submissionDeadline) : null;
+        if (!tenderDeadline || tenderDeadline < fromDate) {
+          return false;
+        }
+      }
+
+      if (deadlineTo) {
+        const toDate = new Date(deadlineTo);
+        const tenderDeadline = tender.submissionDeadline ? new Date(tender.submissionDeadline) : null;
+        if (!tenderDeadline || tenderDeadline > toDate) {
           return false;
         }
       }
@@ -378,6 +416,46 @@ export default function Dashboard() {
                   </Button>
                 );
               })}
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-3">
+              <div className="flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-muted-foreground" />
+                <Select value={selectedLocation} onValueChange={setSelectedLocation}>
+                  <SelectTrigger className="w-48" data-testid="filter-location">
+                    <SelectValue placeholder="Select location..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Locations</SelectItem>
+                    {locations.map((loc) => (
+                      <SelectItem key={loc} value={loc}>
+                        {loc}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-muted-foreground" />
+                <input
+                  type="date"
+                  value={deadlineFrom}
+                  onChange={(e) => setDeadlineFrom(e.target.value)}
+                  className="px-3 py-1.5 border border-border rounded-md text-sm"
+                  placeholder="From"
+                  data-testid="filter-deadline-from"
+                />
+                <span className="text-xs text-muted-foreground">to</span>
+                <input
+                  type="date"
+                  value={deadlineTo}
+                  onChange={(e) => setDeadlineTo(e.target.value)}
+                  className="px-3 py-1.5 border border-border rounded-md text-sm"
+                  placeholder="To"
+                  data-testid="filter-deadline-to"
+                />
+              </div>
             </div>
             
             <div className="mt-2 text-sm text-muted-foreground">

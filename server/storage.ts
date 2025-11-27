@@ -356,6 +356,19 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
+  // Get unique locations
+  async getUniqueLocations(): Promise<string[]> {
+    const results = await db
+      .selectDistinct({ location: tenders.location })
+      .from(tenders)
+      .where(sql`${tenders.location} IS NOT NULL AND ${tenders.location} != ''`)
+      .orderBy(tenders.location);
+    return results
+      .map(r => r.location)
+      .filter((loc): loc is string => loc !== null && loc !== undefined)
+      .sort();
+  }
+
   // Stats
   async getStats(): Promise<{ 
     total: number; 

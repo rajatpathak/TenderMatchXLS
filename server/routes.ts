@@ -256,6 +256,7 @@ function parseTenderFromRow(row: any, tenderType: 'gem' | 'non_gem', sheet?: XLS
     title: fullTitle,
     department: findColumn(row, 'department', 'dept', 'ministry') || null,
     organization: findColumn(row, 'organization', 'org', 'company', 'buyer', 'buyerorg') || null,
+    location: findColumn(row, 'location', 'place', 'city', 'state', 'region', 'area') || null,
     estimatedValue: parseNumber(findColumn(row, 'estimatedvalue', 'value', 'amount', 'budget', 'cost', 'estimatedcost', 'tendervalue'))?.toString() || null,
     emdAmount: parseNumber(findColumn(row, 'emd', 'emdamount', 'earnestmoney', 'earnestmoneydeposit', 'emdr', 'bidsecrurity'))?.toString() || null,
     turnoverRequirement,
@@ -818,6 +819,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching tenders:", error);
       res.status(500).json({ message: "Failed to fetch tenders" });
+    }
+  });
+
+  // Get unique locations
+  app.get('/api/tenders/locations', isAuthenticated, async (req, res) => {
+    try {
+      const locations = await storage.getUniqueLocations();
+      res.json(locations);
+    } catch (error) {
+      console.error("Error fetching locations:", error);
+      res.status(500).json({ message: "Failed to fetch locations" });
     }
   });
 
