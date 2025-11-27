@@ -462,12 +462,14 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
     let processedCount = 0;
 
     // Process all sheets row by row
+    let totalRows = 0;
     for (const sheetName of workbook.SheetNames) {
       const normalizedName = sheetName.toLowerCase().replace(/[-_\s]/g, '');
       const tenderType: 'gem' | 'non_gem' = (normalizedName.includes('gem') && !normalizedName.includes('nongem') && !normalizedName.includes('non')) ? 'gem' : 'non_gem';
       
       const sheet = workbook.Sheets[sheetName];
       const data = XLSX.utils.sheet_to_json(sheet);
+      totalRows += data.length;
       console.log(`[Upload ${uploadId}] Processing "${sheetName}": ${data.length} rows (${tenderType})`);
       
       for (let i = 0; i < data.length; i++) {
@@ -567,13 +569,13 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
 
     // Mark as complete
     progress.status = 'complete';
-    progress.processedRows = allTenders.length;
+    progress.processedRows = totalRows;
     progress.gemCount = gemCount;
     progress.nonGemCount = nonGemCount;
     progress.newCount = newCount;
     progress.duplicateCount = duplicateCount;
     progress.corrigendumCount = corrigendumCount;
-    console.log(`[Upload ${uploadId}] ✅ COMPLETE: ${processedCount}/${allTenders.length} processed | New: ${newCount}, Duplicate: ${duplicateCount}, Corrigendum: ${corrigendumCount}, Failed: ${failedCount}`);
+    console.log(`[Upload ${uploadId}] ✅ COMPLETE: ${processedCount}/${totalRows} processed | New: ${newCount}, Duplicate: ${duplicateCount}, Corrigendum: ${corrigendumCount}, Failed: ${failedCount}`);
     sendProgressUpdate(uploadId);
 
     setTimeout(() => uploadProgressStore.delete(uploadId), 60000);
