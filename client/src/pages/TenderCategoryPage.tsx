@@ -208,7 +208,10 @@ export default function TenderCategoryPage({ status, title, description }: Tende
 
             <div className="flex items-center gap-1">
               <Calendar className="w-4 h-4 text-muted-foreground" />
+              <label htmlFor="deadline-from" className="sr-only">Deadline from</label>
               <input
+                id="deadline-from"
+                name="deadline-from"
                 type="date"
                 value={deadlineFrom}
                 onChange={(e) => setDeadlineFrom(e.target.value)}
@@ -216,7 +219,10 @@ export default function TenderCategoryPage({ status, title, description }: Tende
                 data-testid="filter-deadline-from"
               />
               <span className="text-xs text-muted-foreground px-1">to</span>
+              <label htmlFor="deadline-to" className="sr-only">Deadline to</label>
               <input
+                id="deadline-to"
+                name="deadline-to"
                 type="date"
                 value={deadlineTo}
                 onChange={(e) => setDeadlineTo(e.target.value)}
@@ -271,7 +277,6 @@ export default function TenderCategoryPage({ status, title, description }: Tende
                       key={tender.id}
                       tender={tender}
                       onClick={() => setSelectedTender(tender)}
-                      showAssignButton={status === "eligible" && (canAssign || isBidder)}
                       onAssign={handleAssignTender}
                       isAssigned={assignedTenderIds.has(tender.id)}
                     />

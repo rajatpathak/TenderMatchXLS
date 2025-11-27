@@ -1,8 +1,15 @@
 {
-  "name": "rest-express",
+  "name": "tendermatch",
   "version": "1.0.0",
+  "description": "Comprehensive tender management system with intelligent categorization for IT/Software service companies",
   "type": "module",
   "license": "MIT",
+  "author": "TenderMatch Team",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/tendermatch.git"
+  },
+  "keywords": ["tender", "management", "excel", "analysis", "workflow", "bidding"],
   "scripts": {
     "dev": "NODE_ENV=development tsx server/index-dev.ts",
     "build": "vite build && esbuild server/index-prod.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/index.js",
