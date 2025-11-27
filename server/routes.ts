@@ -246,7 +246,6 @@ function parseTenderFromRow(row: any, tenderType: 'gem' | 'non_gem', sheet?: XLS
   return {
     t247Id: String(t247Id),
     tenderType,
-    title: fullTitle,
     department: findColumn(row, 'department', 'dept', 'ministry') || null,
     organization: findColumn(row, 'organization', 'org', 'company', 'buyer', 'buyerorg') || null,
     estimatedValue: parseNumber(findColumn(row, 'estimatedvalue', 'value', 'amount', 'budget', 'cost', 'estimatedcost', 'tendervalue'))?.toString() || null,
@@ -347,7 +346,7 @@ async function reanalyzeAllTendersAsync() {
         } else {
           const result = analyzeEligibility(
             tender,
-            criteria,
+            criteria!,
             negativeKeywords,
             tender.isMsmeExempted || false,
             tender.isStartupExempted || false,
@@ -586,7 +585,7 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
     
     console.log(`[Upload ${uploadId}] ✅ COMPLETE: ${processedCount}/${totalRows} processed | New: ${newCount}, Duplicate: ${duplicateCount}, Corrigendum: ${corrigendumCount}, Failed: ${failedCount}`);
 
-    setTimeout(() => uploadProgressStore.delete(uploadId), 60000);
+    setTimeout(() => uploadProgressStore.delete(uploadId), 300000);
   } catch (error: any) {
     console.error(`[Upload ${uploadId}] ❌ FATAL ERROR:`, error);
     progress.status = 'error';
@@ -1285,9 +1284,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Team Member Routes
   // Get current team member based on authenticated user's email
-  app.get('/api/me/team-member', isAuthenticated, async (req, res) => {
+  app.get('/api/me/team-member', isAuthenticated, async (req: any, res) => {
     try {
-      const user = req.user as any;
+      const user = req.user;
       if (!user?.email) {
         return res.status(404).json({ message: "User email not found" });
       }
