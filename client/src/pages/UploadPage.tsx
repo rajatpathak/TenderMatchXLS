@@ -43,19 +43,54 @@ export default function UploadPage() {
         throw new Error(error.message || "Upload failed");
       }
       
-      return response.json();
+      const uploadData = await response.json();
+      
+      // Connect to SSE for real-time progress
+      if (uploadData.uploadId) {
+        const eventSource = new EventSource(`/api/upload-progress/${uploadData.uploadId}`);
+        
+        eventSource.onmessage = (event) => {
+          const data = JSON.parse(event.data);
+          if (data.type === 'complete') {
+            eventSource.close();
+            updateProgress(100, "Complete", {
+              newCount: data.newCount,
+              duplicateCount: data.duplicateCount,
+              corrigendumCount: data.corrigendumCount,
+              gemCount: data.gemCount,
+              nonGemCount: data.nonGemCount,
+            });
+          } else if (data.type === 'processing') {
+            const percent = data.percentComplete || Math.round((data.processedRows / Math.max(data.totalRows, 1)) * 100);
+            updateProgress(Math.min(percent, 99), data.message || "Processing...", {
+              gemCount: data.gemCount,
+              nonGemCount: data.nonGemCount,
+              newCount: data.newCount,
+              duplicateCount: data.duplicateCount,
+              corrigendumCount: data.corrigendumCount,
+              timeRemaining: data.estimatedTimeRemaining,
+            });
+          }
+        };
+        
+        eventSource.onerror = () => {
+          eventSource.close();
+        };
+      }
+      
+      return uploadData;
     },
     onSuccess: (data) => {
+      completeUpload();
+      setTimeout(() => clearUpload(), 3000);
+      
       const newCount = data.newCount || 0;
       const duplicates = data.duplicateCount || 0;
       const corrigendum = data.corrigendumCount || 0;
-      updateProgress(100, "Complete", duplicates, newCount);
-      completeUpload();
-      setTimeout(() => clearUpload(), 2000);
       
       toast({
-        title: "Upload Successful",
-        description: `New: ${newCount} | Duplicates: ${duplicates} | Updates: ${corrigendum}`,
+        title: "Upload Complete",
+        description: `New: ${newCount} • Duplicates: ${duplicates} • Updates: ${corrigendum}`,
       });
       queryClient.invalidateQueries({ queryKey: ["/api/tenders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/uploads"] });

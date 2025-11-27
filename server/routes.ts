@@ -404,15 +404,20 @@ function sendProgressUpdate(uploadId: number) {
   const rowsPerSecond = progress.processedRows / Math.max(elapsed, 0.1);
   const remainingRows = progress.totalRows - progress.processedRows;
   const estimatedTimeRemaining = remainingRows / Math.max(rowsPerSecond, 0.1);
+  const percentComplete = Math.round((progress.processedRows / Math.max(progress.totalRows, 1)) * 100);
 
   const data = {
     type: progress.status,
     gemCount: progress.gemCount,
     nonGemCount: progress.nonGemCount,
+    newCount: progress.newCount,
+    duplicateCount: progress.duplicateCount,
+    corrigendumCount: progress.corrigendumCount,
     failedCount: progress.failedCount,
     totalRows: progress.totalRows,
     currentSheet: progress.currentSheet,
     processedRows: progress.processedRows,
+    percentComplete,
     estimatedTimeRemaining: Math.max(0, estimatedTimeRemaining),
     message: progress.message,
   };

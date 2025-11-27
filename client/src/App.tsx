@@ -35,21 +35,35 @@ import {
 function HeaderContent() {
   const { upload } = useUploadProgress();
 
+  const formatTime = (seconds: number) => {
+    if (seconds < 60) return `${Math.ceil(seconds)}s`;
+    return `${Math.ceil(seconds / 60)}m`;
+  };
+
   return (
     <div className="flex items-center justify-between h-14 px-4 border-b border-border bg-background shrink-0 gap-4">
       <SidebarTrigger data-testid="button-sidebar-toggle" />
       {upload?.isUploading && (
-        <div className="flex-1 max-w-xs flex items-center gap-2">
+        <div className="flex-1 max-w-2xl flex items-center gap-2">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-1">
               <p className="text-xs text-muted-foreground truncate">{upload.fileName}</p>
-              {upload.duplicates !== undefined && upload.added !== undefined && (
-                <span className="text-xs text-muted-foreground font-mono whitespace-nowrap">
-                  +{upload.added} | -{upload.duplicates}
-                </span>
-              )}
+              <div className="flex gap-3 text-xs text-muted-foreground font-mono whitespace-nowrap">
+                {upload.gemCount !== undefined && <span>{upload.gemCount} GEM</span>}
+                {upload.nonGemCount !== undefined && <span>{upload.nonGemCount} Non-GEM</span>}
+                {upload.timeRemaining !== undefined && upload.timeRemaining > 0 && (
+                  <span>{formatTime(upload.timeRemaining)} left</span>
+                )}
+                {upload.progress === 100 && (
+                  <div className="flex gap-2">
+                    <span className="text-green-600 dark:text-green-400">+{upload.newCount || 0}</span>
+                    <span className="text-muted-foreground">−{upload.duplicateCount || 0}</span>
+                    <span className="text-blue-600 dark:text-blue-400">~{upload.corrigendumCount || 0}</span>
+                  </div>
+                )}
+              </div>
             </div>
-            <Progress value={upload.progress} className="h-1 mt-1" />
+            <Progress value={upload.progress} className="h-1" />
           </div>
           <span className="text-xs text-muted-foreground font-mono whitespace-nowrap">{upload.progress}%</span>
         </div>
