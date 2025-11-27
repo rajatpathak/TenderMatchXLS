@@ -370,11 +370,21 @@ export function analyzeEligibility(
   excelStartupExemption: boolean = false,
   similarCategory: string | null = null
 ): MatchResult {
-  const titleText = tender.title || '';
-  const criteriaText = tender.eligibilityCriteria || '';
-  const checklistText = tender.checklist || '';
+  const titleText = (tender.title as string) || '';
+  const criteriaText = (tender.eligibilityCriteria as string) || '';
+  const checklistText = (tender.checklist as string) || '';
   
   const eligibilityText = [criteriaText, checklistText, titleText].join(' ');
+  
+  // Check for core IT keywords early (before early returns)
+  const textLower = eligibilityText.toLowerCase();
+  const hasCoreITKeywords = [
+    'software', 'website', 'web portal', 'web application', 'web development',
+    'mobile app', 'app development', 'application development', 'it project',
+    'it/ites', 'ites', 'it services', 'digitization', 'digital', 'portal',
+    'manpower', 'erp', 'crm', 'data processing', 'solution design',
+    'computerization', 'automation', 'information technology', 'ict'
+  ].some(kw => textLower.includes(kw));
   
   // Check if this is a CORE IT SERVICE tender (like "hiring of agency for it projects")
   const isCoreService = isCoreITServiceTitle(titleText);
@@ -440,7 +450,6 @@ export function analyzeEligibility(
   
   // Check if tender matches core IT/Software services (from title or Similar Category)
   const isCoreServiceMatch = checkCoreServiceMatch(similarCategory);
-  const textLower = eligibilityText.toLowerCase();
   
   // Check for negative keywords - get ALL matches, not just the first one
   const allMatchedKeywords = checkAllNegativeKeywords(eligibilityText, negativeKeywords);
@@ -478,14 +487,6 @@ export function analyzeEligibility(
     
     // If no negative keyword is in the title, check if it's a non-IT tender
     // If non-IT, mark as not_relevant (the negative keyword in criteria text is disqualifying)
-    const hasCoreITKeywords = [
-      'software', 'website', 'web portal', 'web application', 'web development',
-      'mobile app', 'app development', 'application development', 'it project',
-      'it/ites', 'ites', 'it services', 'digitization', 'portal',
-      'manpower', 'erp', 'crm', 'data processing', 'solution design',
-      'computerization', 'automation', 'information technology', 'ict'
-    ].some(kw => textLower.includes(kw));
-    
     const matchesCoreProjectTypes = tags.length > 0 || isCoreServiceMatch || hasCoreITKeywords;
     
     if (!matchesCoreProjectTypes) {
@@ -503,20 +504,11 @@ export function analyzeEligibility(
     }
   }
   
-  // Continue with IT keyword detection for scoring
-  const hasCoreITKeywords = [
-    'software', 'website', 'web portal', 'web application', 'web development',
-    'mobile app', 'app development', 'application development', 'it project',
-    'it/ites', 'ites', 'it services', 'digitization', 'digital', 'portal',
-    'manpower', 'erp', 'crm', 'data processing', 'solution design',
-    'computerization', 'automation', 'information technology', 'ict'
-  ].some(kw => textLower.includes(kw));
-  
-  const matchesCoreProjectTypes = tags.length > 0 || isCoreServiceMatch || hasCoreITKeywords;
+  // Continue with IT keyword detection for scoring (already calculated at top of function)
   
   // Extract turnover requirement in LAKHS
   // Excel value (from Column S) is already in Lakhs, text parsing also returns Lakhs
-  const excelTurnover = tender.turnoverRequirement ? parseFloat(String(tender.turnoverRequirement)) : null;
+  const excelTurnover = (tender.turnoverRequirement as string | null) ? parseFloat(String(tender.turnoverRequirement)) : null;
   const textTurnover = extractTurnoverRequirement(eligibilityText);
   const requiredTurnoverLakhs = excelTurnover !== null && !isNaN(excelTurnover) ? excelTurnover : textTurnover;
   // Company turnover: criteria.turnoverCr is in Crores, convert to Lakhs (or use 400 Lakhs as default = 4 Crore)

@@ -253,6 +253,7 @@ function parseTenderFromRow(row: any, tenderType: 'gem' | 'non_gem', sheet?: XLS
   return {
     t247Id: String(t247Id),
     tenderType,
+    title: fullTitle,
     department: findColumn(row, 'department', 'dept', 'ministry') || null,
     organization: findColumn(row, 'organization', 'org', 'company', 'buyer', 'buyerorg') || null,
     estimatedValue: parseNumber(findColumn(row, 'estimatedvalue', 'value', 'amount', 'budget', 'cost', 'estimatedcost', 'tendervalue'))?.toString() || null,
