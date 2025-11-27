@@ -483,92 +483,102 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
         try {
           const row = data[i];
           const excelRowIndex = i + 2;
-          const tenderData = parseTenderFromRow(row, tenderType, sheet, excelRowIndex);
           
-          // Check for duplicate T247 ID (corrigendum detection)
-          const existingTender = await storage.getTenderByT247Id(tenderData.t247Id!);
-          
-          // Use Excel exemption flags if available
-          const excelMsme = tenderData.excelMsmeExemption;
-          const excelStartup = tenderData.excelStartupExemption;
-          const tenderSimilarCategory = tenderData.similarCategory;
-          
-          // Analyze eligibility with negative keywords and Similar Category
-          const matchResult = analyzeEligibility(tenderData, criteria!, negativeKeywords, excelMsme, excelStartup, tenderSimilarCategory);
-          
-          // Remove temporary Excel fields before inserting
-          const { excelMsmeExemption, excelStartupExemption, ...tenderInsertData } = tenderData;
-          
-          if (existingTender) {
-            // UPDATE existing tender instead of creating duplicate
-            // Detect changes first (before updating)
-            const changes = detectCorrigendumChanges(existingTender, tenderInsertData);
+          try {
+            const tenderData = parseTenderFromRow(row, tenderType, sheet, excelRowIndex);
+            if (!tenderData || !tenderData.t247Id) {
+              throw new Error('Failed to parse tender data or missing T247 ID');
+            }
             
-            if (changes.length > 0) {
-              // Only update and mark as corrigendum if there are actual changes
-              const updatedTender = await storage.updateTender(existingTender.id, {
+            // Check for duplicate T247 ID (corrigendum detection)
+            const existingTender = await storage.getTenderByT247Id(tenderData.t247Id!);
+            
+            // Use Excel exemption flags if available
+            const excelMsme = tenderData.excelMsmeExemption;
+            const excelStartup = tenderData.excelStartupExemption;
+            const tenderSimilarCategory = tenderData.similarCategory;
+            
+            // Analyze eligibility with negative keywords and Similar Category
+            const matchResult = analyzeEligibility(tenderData, criteria!, negativeKeywords, excelMsme, excelStartup, tenderSimilarCategory);
+            
+            // Remove temporary Excel fields before inserting
+            const { excelMsmeExemption, excelStartupExemption, ...tenderInsertData } = tenderData;
+            
+            if (existingTender) {
+              // UPDATE existing tender instead of creating duplicate
+              // Detect changes first (before updating)
+              const changes = detectCorrigendumChanges(existingTender, tenderInsertData);
+              
+              if (changes.length > 0) {
+                // Only update and mark as corrigendum if there are actual changes
+                await storage.updateTender(existingTender.id, {
+                  ...tenderInsertData,
+                  uploadId, // Update to latest upload
+                  matchPercentage: matchResult.matchPercentage,
+                  isMsmeExempted: matchResult.isMsmeExempted,
+                  isStartupExempted: matchResult.isStartupExempted,
+                  tags: matchResult.tags,
+                  analysisStatus: matchResult.analysisStatus,
+                  eligibilityStatus: existingTender.isManualOverride ? existingTender.eligibilityStatus : matchResult.eligibilityStatus,
+                  notRelevantKeyword: matchResult.notRelevantKeyword,
+                  isCorrigendum: true,
+                  // Reset missed status if deadline was updated
+                  isMissed: false,
+                  missedAt: null,
+                });
+                
+                // Save corrigendum changes
+                for (const change of changes) {
+                  await storage.createCorrigendumChange({
+                    tenderId: existingTender.id,
+                    originalTenderId: existingTender.id,
+                    fieldName: change.fieldName,
+                    oldValue: change.oldValue,
+                    newValue: change.newValue,
+                  });
+                }
+                corrigendumCount++;
+                progress.corrigendumCount = corrigendumCount;
+              } else {
+                // If no changes, it's a duplicate
+                duplicateCount++;
+                progress.duplicateCount = duplicateCount;
+              }
+            } else {
+              // Create new tender
+              const fullTenderData: InsertTender = {
                 ...tenderInsertData,
-                uploadId, // Update to latest upload
+                uploadId,
                 matchPercentage: matchResult.matchPercentage,
                 isMsmeExempted: matchResult.isMsmeExempted,
                 isStartupExempted: matchResult.isStartupExempted,
                 tags: matchResult.tags,
                 analysisStatus: matchResult.analysisStatus,
-                eligibilityStatus: existingTender.isManualOverride ? existingTender.eligibilityStatus : matchResult.eligibilityStatus,
+                eligibilityStatus: matchResult.eligibilityStatus,
                 notRelevantKeyword: matchResult.notRelevantKeyword,
-                isCorrigendum: true,
-                // Reset missed status if deadline was updated
-                isMissed: false,
-                missedAt: null,
-              });
+                isCorrigendum: false,
+                originalTenderId: null,
+              };
               
-              // Save corrigendum changes
-              for (const change of changes) {
-                await storage.createCorrigendumChange({
-                  tenderId: existingTender.id,
-                  originalTenderId: existingTender.id,
-                  fieldName: change.fieldName,
-                  oldValue: change.oldValue,
-                  newValue: change.newValue,
-                });
-              }
-              corrigendumCount++;
-              progress.corrigendumCount = corrigendumCount;
-            } else {
-              // If no changes, it's a duplicate
-              duplicateCount++;
-              progress.duplicateCount = duplicateCount;
+              await storage.createTender(fullTenderData);
+              newCount++;
+              progress.newCount = newCount;
             }
-          } else {
-            // Create new tender
-            const fullTenderData: InsertTender = {
-              ...tenderInsertData,
-              uploadId,
-              matchPercentage: matchResult.matchPercentage,
-              isMsmeExempted: matchResult.isMsmeExempted,
-              isStartupExempted: matchResult.isStartupExempted,
-              tags: matchResult.tags,
-              analysisStatus: matchResult.analysisStatus,
-              eligibilityStatus: matchResult.eligibilityStatus,
-              notRelevantKeyword: matchResult.notRelevantKeyword,
-              isCorrigendum: false,
-              originalTenderId: null,
-            };
             
-            await storage.createTender(fullTenderData);
-            newCount++;
-            progress.newCount = newCount;
-          }
-          
-          if (tenderType === 'gem') {
-            gemCount++;
-            progress.gemCount = gemCount;
-          } else {
-            nonGemCount++;
-            progress.nonGemCount = nonGemCount;
+            if (tenderType === 'gem') {
+              gemCount++;
+              progress.gemCount = gemCount;
+            } else {
+              nonGemCount++;
+              progress.nonGemCount = nonGemCount;
+            }
+          } catch (rowErr) {
+            console.error(`[Upload ${uploadId}] Error processing row ${i + 1}:`, rowErr);
+            failedCount++;
+            progress.failedCount = failedCount;
           }
         } catch (err) {
-          console.error('Error processing row:', err);
+          console.error(`[Upload ${uploadId}] Outer error at row ${i + 1}:`, err);
           failedCount++;
           progress.failedCount = failedCount;
         }
@@ -580,6 +590,7 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
           sendProgressUpdate(uploadId);
         }
       }
+      console.log(`[Upload ${uploadId}] Finished processing sheet "${sheetName}". GEM: ${gemCount}, Non-GEM: ${nonGemCount}, New: ${newCount}, Duplicate: ${duplicateCount}`);
     }
 
     // Update upload record with counts
