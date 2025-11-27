@@ -563,8 +563,8 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
             failedCount++;
           }
 
-          // Update progress every 50 rows
-          if (processedCount % 50 === 0) {
+          // Update progress every 10 rows for real-time visibility
+          if (processedCount % 10 === 0) {
             progress.processedRows = processedCount;
             progress.gemCount = gemCount;
             progress.nonGemCount = nonGemCount;
@@ -572,7 +572,6 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
             progress.duplicateCount = duplicateCount;
             progress.corrigendumCount = corrigendumCount;
             sendProgressUpdate(uploadId);
-            console.log(`[Upload ${uploadId}] Progress: ${processedCount} rows processed`);
           }
         }
       } catch (sheetErr) {

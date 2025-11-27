@@ -88,8 +88,8 @@ export default function UploadPage() {
     },
     onSuccess: (data) => {
       completeUpload();
-      // Keep progress visible for longer so SSE can complete
-      setTimeout(() => clearUpload(), 8000);
+      // Keep progress visible until user acknowledges or after very long delay
+      setTimeout(() => clearUpload(), 30000);
       
       const newCount = data.newCount || 0;
       const duplicates = data.duplicateCount || 0;
