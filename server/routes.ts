@@ -477,68 +477,79 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
             const row = data[i];
             const rowIndex = i + 2;
             
-            const tenderData = parseTenderFromRow(row, tenderType, sheet, rowIndex);
-            if (!tenderData?.t247Id) {
-              failedCount++;
-              continue;
-            }
-
-            const existingTender = await storage.getTenderByT247Id(tenderData.t247Id);
-            const matchResult = analyzeEligibility(tenderData, criteria, negativeKeywords, tenderData.excelMsmeExemption, tenderData.excelStartupExemption, tenderData.similarCategory);
-            const { excelMsmeExemption, excelStartupExemption, similarCategory, ...tenderInsertData } = tenderData;
-
-            if (existingTender) {
-              const changes = detectCorrigendumChanges(existingTender, tenderInsertData);
-              if (changes.length > 0) {
-                await storage.updateTender(existingTender.id, {
-                  ...tenderInsertData,
-                  uploadId,
-                  matchPercentage: matchResult.matchPercentage,
-                  isMsmeExempted: matchResult.isMsmeExempted,
-                  isStartupExempted: matchResult.isStartupExempted,
-                  tags: matchResult.tags,
-                  analysisStatus: matchResult.analysisStatus,
-                  eligibilityStatus: existingTender.isManualOverride ? existingTender.eligibilityStatus : matchResult.eligibilityStatus,
-                  notRelevantKeyword: matchResult.notRelevantKeyword,
-                  isCorrigendum: true,
-                  isMissed: false,
-                  missedAt: null,
-                });
-                
-                for (const change of changes) {
-                  await storage.createCorrigendumChange({
-                    tenderId: existingTender.id,
-                    originalTenderId: existingTender.id,
-                    fieldName: change.fieldName,
-                    oldValue: change.oldValue,
-                    newValue: change.newValue,
-                  });
-                }
-                corrigendumCount++;
-              } else {
-                duplicateCount++;
+            try {
+              const tenderData = parseTenderFromRow(row, tenderType, sheet, rowIndex);
+              if (!tenderData?.t247Id) {
+                if (i < 5) console.log(`[Upload ${uploadId}] Row ${rowIndex}: No T247ID - skipped`);
+                failedCount++;
+                continue;
               }
-            } else {
-              await storage.createTender({
-                ...tenderInsertData,
-                uploadId,
-                matchPercentage: matchResult.matchPercentage,
-                isMsmeExempted: matchResult.isMsmeExempted,
-                isStartupExempted: matchResult.isStartupExempted,
-                tags: matchResult.tags,
-                analysisStatus: matchResult.analysisStatus,
-                eligibilityStatus: matchResult.eligibilityStatus,
-                notRelevantKeyword: matchResult.notRelevantKeyword,
-                isCorrigendum: false,
-                originalTenderId: null,
-              });
-              newCount++;
+
+              try {
+                const existingTender = await storage.getTenderByT247Id(tenderData.t247Id);
+                const matchResult = analyzeEligibility(tenderData, criteria, negativeKeywords, tenderData.excelMsmeExemption, tenderData.excelStartupExemption, tenderData.similarCategory);
+                const { excelMsmeExemption, excelStartupExemption, similarCategory, ...tenderInsertData } = tenderData;
+
+                if (existingTender) {
+                  const changes = detectCorrigendumChanges(existingTender, tenderInsertData);
+                  if (changes.length > 0) {
+                    await storage.updateTender(existingTender.id, {
+                      ...tenderInsertData,
+                      uploadId,
+                      matchPercentage: matchResult.matchPercentage,
+                      isMsmeExempted: matchResult.isMsmeExempted,
+                      isStartupExempted: matchResult.isStartupExempted,
+                      tags: matchResult.tags,
+                      analysisStatus: matchResult.analysisStatus,
+                      eligibilityStatus: existingTender.isManualOverride ? existingTender.eligibilityStatus : matchResult.eligibilityStatus,
+                      notRelevantKeyword: matchResult.notRelevantKeyword,
+                      isCorrigendum: true,
+                      isMissed: false,
+                      missedAt: null,
+                    });
+                    
+                    for (const change of changes) {
+                      await storage.createCorrigendumChange({
+                        tenderId: existingTender.id,
+                        originalTenderId: existingTender.id,
+                        fieldName: change.fieldName,
+                        oldValue: change.oldValue,
+                        newValue: change.newValue,
+                      });
+                    }
+                    corrigendumCount++;
+                  } else {
+                    duplicateCount++;
+                  }
+                } else {
+                  await storage.createTender({
+                    ...tenderInsertData,
+                    uploadId,
+                    matchPercentage: matchResult.matchPercentage,
+                    isMsmeExempted: matchResult.isMsmeExempted,
+                    isStartupExempted: matchResult.isStartupExempted,
+                    tags: matchResult.tags,
+                    analysisStatus: matchResult.analysisStatus,
+                    eligibilityStatus: matchResult.eligibilityStatus,
+                    notRelevantKeyword: matchResult.notRelevantKeyword,
+                    isCorrigendum: false,
+                    originalTenderId: null,
+                  });
+                  newCount++;
+                }
+
+                if (tenderType === 'gem') gemCount++;
+                else nonGemCount++;
+
+                processedCount++;
+              } catch (dbErr) {
+                console.error(`[Upload ${uploadId}] DB Error on row ${rowIndex} (T247: ${tenderData?.t247Id}):`, (dbErr as any).message);
+                failedCount++;
+              }
+            } catch (parseErr) {
+              console.error(`[Upload ${uploadId}] Parse Error on row ${rowIndex}:`, (parseErr as any).message);
+              failedCount++;
             }
-
-            if (tenderType === 'gem') gemCount++;
-            else nonGemCount++;
-
-            processedCount++;
           } catch (err) {
             console.error(`[Upload ${uploadId}] Row error:`, (err as any).message);
             failedCount++;
