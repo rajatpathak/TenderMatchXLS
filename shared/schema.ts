@@ -135,6 +135,9 @@ export const tenders = pgTable("tenders", {
   submissionDeadline: timestamp("submission_deadline"),
   openingDate: timestamp("opening_date"),
   
+  // Location
+  location: text("location"),
+  
   // Eligibility fields
   eligibilityCriteria: text("eligibility_criteria"),
   checklist: text("checklist"),

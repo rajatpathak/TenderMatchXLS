@@ -95,6 +95,9 @@ export interface IStorage {
     todayUploads: number;
   }>;
   
+  // Get unique locations
+  getUniqueLocations(): Promise<string[]>;
+  
   // Missed deadline operations
   getMissedTenders(): Promise<Tender[]>;
   updateMissedDeadlines(): Promise<{ updated: number; restored: number }>;
