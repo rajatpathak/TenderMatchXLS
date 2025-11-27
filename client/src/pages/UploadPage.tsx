@@ -22,6 +22,7 @@ export default function UploadPage() {
   const [dragActive, setDragActive] = useState(false);
   const { toast } = useToast();
   const [, setLocation] = useLocation();
+  const { upload } = useUploadProgress();
   const { startUpload, updateProgress, completeUpload, clearUpload } = useUploadProgress();
 
   const uploadMutation = useMutation({
@@ -233,13 +234,73 @@ export default function UploadPage() {
                 )}
               </div>
 
-              {uploadMutation.isPending && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Parsing sheets and analyzing eligibility criteria...</span>
-                    <Loader2 className="w-4 h-4 animate-spin" />
+              {uploadMutation.isPending && upload && (
+                <div className="space-y-4">
+                  {/* Progress Bar */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium text-foreground">{upload.message}</span>
+                      <span className="font-bold text-primary">{upload.progress}%</span>
+                    </div>
+                    <Progress value={upload.progress} className="h-3" />
                   </div>
-                  <Progress value={undefined} className="h-2" />
+
+                  {/* Real-time Metrics Grid */}
+                  <div className="grid grid-cols-2 gap-3 p-4 rounded-lg bg-muted/50 border">
+                    {/* New Entries */}
+                    <div className="text-center p-2 rounded-md bg-background">
+                      <div className="text-xl font-bold text-green-600 dark:text-green-400">
+                        {upload.newCount ?? 0}
+                      </div>
+                      <div className="text-xs text-muted-foreground">New Entries</div>
+                    </div>
+
+                    {/* Duplicates */}
+                    <div className="text-center p-2 rounded-md bg-background">
+                      <div className="text-xl font-bold text-yellow-600 dark:text-yellow-400">
+                        {upload.duplicateCount ?? 0}
+                      </div>
+                      <div className="text-xs text-muted-foreground">Duplicates</div>
+                    </div>
+
+                    {/* Updates */}
+                    <div className="text-center p-2 rounded-md bg-background">
+                      <div className="text-xl font-bold text-blue-600 dark:text-blue-400">
+                        {upload.corrigendumCount ?? 0}
+                      </div>
+                      <div className="text-xs text-muted-foreground">Updates</div>
+                    </div>
+
+                    {/* Total Processing */}
+                    <div className="text-center p-2 rounded-md bg-background">
+                      <div className="text-xl font-bold text-purple-600 dark:text-purple-400">
+                        {(upload.newCount ?? 0) + (upload.duplicateCount ?? 0) + (upload.corrigendumCount ?? 0)}
+                      </div>
+                      <div className="text-xs text-muted-foreground">Total</div>
+                    </div>
+
+                    {/* GEM Tenders */}
+                    <div className="text-center p-2 rounded-md bg-background">
+                      <div className="text-lg font-bold text-blue-500">
+                        {upload.gemCount ?? 0}
+                      </div>
+                      <div className="text-xs text-muted-foreground">GEM Tenders</div>
+                    </div>
+
+                    {/* Non-GEM Tenders */}
+                    <div className="text-center p-2 rounded-md bg-background">
+                      <div className="text-lg font-bold text-slate-600 dark:text-slate-400">
+                        {upload.nonGemCount ?? 0}
+                      </div>
+                      <div className="text-xs text-muted-foreground">Non-GEM</div>
+                    </div>
+                  </div>
+
+                  {/* Status Message */}
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Processing... {upload.timeRemaining && `(~${Math.ceil(upload.timeRemaining / 1000)}s remaining)`}</span>
+                  </div>
                 </div>
               )}
 
