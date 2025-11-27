@@ -101,6 +101,14 @@ export function getSession() {
     tableName: "sessions",
   });
   
+  // Allow disabling secure cookies for HTTP-only deployments (testing/internal)
+  const isProduction = process.env.NODE_ENV === "production";
+  const disableSecureCookies = process.env.DISABLE_SECURE_COOKIES === "true";
+  
+  if (isProduction && disableSecureCookies) {
+    console.warn("⚠️  WARNING: Secure cookies disabled. Only use this for testing or internal networks!");
+  }
+  
   return session({
     secret: sessionSecret || "dev-secret-change-in-production",
     store: sessionStore,
@@ -108,9 +116,9 @@ export function getSession() {
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: isProduction && !disableSecureCookies,
       maxAge: sessionTtl,
-      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+      sameSite: (isProduction && !disableSecureCookies) ? "strict" : "lax",
     },
   });
 }
@@ -254,6 +262,9 @@ export async function setupAuth(app: Express) {
       }
     }
     
+    const isProduction = process.env.NODE_ENV === "production";
+    const disableSecureCookies = process.env.DISABLE_SECURE_COOKIES === "true";
+    
     req.session.destroy((err) => {
       if (err) {
         console.error("Session destroy error:", err);
@@ -262,8 +273,8 @@ export async function setupAuth(app: Express) {
         // Clear the session cookie
         res.clearCookie("connect.sid", {
           httpOnly: true,
-          secure: process.env.NODE_ENV === "production",
-          sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+          secure: isProduction && !disableSecureCookies,
+          sameSite: (isProduction && !disableSecureCookies) ? "strict" : "lax",
         });
         res.status(200).json({ success: true });
       }
