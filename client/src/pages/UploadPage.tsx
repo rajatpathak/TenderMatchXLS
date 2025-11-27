@@ -51,26 +51,31 @@ export default function UploadPage() {
         const eventSource = new EventSource(`/api/upload-progress/${uploadData.uploadId}`);
         
         eventSource.onmessage = (event) => {
-          const data = JSON.parse(event.data);
-          if (data.type === 'complete') {
-            eventSource.close();
-            updateProgress(100, "Complete", {
-              newCount: data.newCount,
-              duplicateCount: data.duplicateCount,
-              corrigendumCount: data.corrigendumCount,
-              gemCount: data.gemCount,
-              nonGemCount: data.nonGemCount,
-            });
-          } else if (data.type === 'processing') {
-            const percent = data.percentComplete || Math.round((data.processedRows / Math.max(data.totalRows, 1)) * 100);
-            updateProgress(Math.min(percent, 99), data.message || "Processing...", {
-              gemCount: data.gemCount,
-              nonGemCount: data.nonGemCount,
-              newCount: data.newCount,
-              duplicateCount: data.duplicateCount,
-              corrigendumCount: data.corrigendumCount,
-              timeRemaining: data.estimatedTimeRemaining,
-            });
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'complete') {
+              updateProgress(100, "✓ Complete - Finalizing...", {
+                newCount: data.newCount,
+                duplicateCount: data.duplicateCount,
+                corrigendumCount: data.corrigendumCount,
+                gemCount: data.gemCount,
+                nonGemCount: data.nonGemCount,
+              });
+              // Keep connection open for a moment to ensure final update is displayed
+              setTimeout(() => eventSource.close(), 1000);
+            } else if (data.type === 'processing') {
+              const percent = data.percentComplete || Math.round((data.processedRows / Math.max(data.totalRows, 1)) * 100);
+              updateProgress(Math.min(percent, 99), data.message || "Processing...", {
+                gemCount: data.gemCount,
+                nonGemCount: data.nonGemCount,
+                newCount: data.newCount,
+                duplicateCount: data.duplicateCount,
+                corrigendumCount: data.corrigendumCount,
+                timeRemaining: data.estimatedTimeRemaining,
+              });
+            }
+          } catch (err) {
+            console.error("Error parsing SSE message:", err);
           }
         };
         
@@ -83,7 +88,8 @@ export default function UploadPage() {
     },
     onSuccess: (data) => {
       completeUpload();
-      setTimeout(() => clearUpload(), 3000);
+      // Keep progress visible for longer so SSE can complete
+      setTimeout(() => clearUpload(), 8000);
       
       const newCount = data.newCount || 0;
       const duplicates = data.duplicateCount || 0;
