@@ -380,8 +380,7 @@ export function analyzeEligibility(
   const isCoreService = isCoreITServiceTitle(titleText);
   
   // If NO eligibility criteria AND NO checklist, but title exists:
-  // - If it's a core IT service, mark as ELIGIBLE
-  // - Otherwise, mark as MANUAL_REVIEW (we can't determine eligibility without criteria)
+  // Try to determine eligibility from title alone
   if (!criteriaText.trim() && !checklistText.trim()) {
     if (isCoreService) {
       // Core IT service with no criteria = ELIGIBLE (these are our tenders)
@@ -410,7 +409,25 @@ export function analyzeEligibility(
         turnoverMet: false,
       };
     }
-    // Has title but not core service and no criteria = manual review
+    
+    // Has title but not core service and no criteria - check if project type matches
+    const hasProjectTypeMatch = detectTags(eligibilityText, criteria).length > 0 || hasCoreITKeywords;
+    if (hasProjectTypeMatch) {
+      // If title suggests our project types, mark as eligible (can follow up with PDF if needed)
+      return {
+        matchPercentage: 70,
+        isMsmeExempted: excelMsmeExemption,
+        isStartupExempted: excelStartupExemption,
+        tags: detectTags(eligibilityText, criteria),
+        analysisStatus: "analyzed",
+        eligibilityStatus: "eligible",
+        notRelevantKeyword: null,
+        turnoverRequired: null,
+        turnoverMet: true,
+      };
+    }
+    
+    // No criteria, no checklist, but title exists and doesn't match our types = manual review
     // (We need to see the PDF/criteria to determine eligibility)
   }
   

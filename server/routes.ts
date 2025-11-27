@@ -177,8 +177,15 @@ function parseTenderFromRow(row: any, tenderType: 'gem' | 'non_gem', sheet?: XLS
   // Get REFERENCE NO for title display
   const referenceNo = findColumn(row, 'referenceno', 'refno', 'refrno', 'reference', 'referanceno');
   
-  // Get the tender brief/title
-  const tenderBrief = findColumn(row, 'title', 'tendertitle', 'name', 'subject', 'work', 'description', 'tenderbrief', 'brief') || null;
+  // Get the tender brief/title - try Column D first (standard location in Excel)
+  let tenderBrief = null;
+  if (sheet && rowIndex !== undefined) {
+    tenderBrief = getColumnByLetter(sheet, rowIndex, 'D');
+  }
+  // Fallback to name-based lookup
+  if (!tenderBrief) {
+    tenderBrief = findColumn(row, 'title', 'tendertitle', 'name', 'subject', 'work', 'description', 'tenderbrief', 'brief') || null;
+  }
   
   // Combine REFERENCE NO with title if both exist
   let fullTitle = tenderBrief;
