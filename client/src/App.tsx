@@ -15,7 +15,6 @@ import Landing from "@/pages/Landing";
 import Dashboard from "@/pages/Dashboard";
 import Settings from "@/pages/Settings";
 import UnableToAnalyse from "@/pages/UnableToAnalyse";
-import Corrigendum from "@/pages/Corrigendum";
 import UploadHistory from "@/pages/UploadHistory";
 import UploadPage from "@/pages/UploadPage";
 import TeamManagement from "@/pages/TeamManagement";
@@ -125,7 +124,6 @@ function Router() {
         <Route path="/tenders/not-eligible" component={NotEligibleTendersPage} />
         <Route path="/tenders/manual-review" component={ManualReviewTendersPage} />
         <Route path="/tenders/missed" component={MissedTendersPage} />
-        <Route path="/corrigendum" component={Corrigendum} />
         <Route path="/unable-to-analyse" component={UnableToAnalyse} />
         <Route path="/workflow" component={WorkflowPage} />
         <Route path="/assignments" component={AssignmentsHub} />

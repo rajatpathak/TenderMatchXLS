@@ -48,7 +48,12 @@ import {
   Loader2,
   UserPlus,
   Clock,
+  ArrowRight,
+  Plus,
+  Minus,
+  RefreshCw,
 } from "lucide-react";
+import type { CorrigendumChange } from "@shared/schema";
 import type { Tender, TeamMember } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -102,6 +107,11 @@ export function TenderDetailModal({ tender, open, onClose, onViewCorrigendum }: 
     queryKey: ["/api/me/team-member"],
     enabled: open,
     retry: false,
+  });
+
+  const { data: corrigendumChanges = [] } = useQuery<CorrigendumChange[]>({
+    queryKey: ["/api/tenders", tender?.id, "corrigendum-changes"],
+    enabled: open && tender?.isCorrigendum === true,
   });
 
   const overrideMutation = useMutation({
@@ -434,6 +444,82 @@ export function TenderDetailModal({ tender, open, onClose, onViewCorrigendum }: 
                     </p>
                   )}
                 </div>
+              </div>
+            )}
+
+            {tender.isCorrigendum && corrigendumChanges.length > 0 && (
+              <div className="rounded-lg bg-amber-500/10 border border-amber-200 dark:border-amber-800 p-4">
+                <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 mb-3">
+                  <RefreshCw className="w-5 h-5" />
+                  <span className="font-medium">Corrigendum Detected</span>
+                </div>
+                <p className="text-sm text-muted-foreground mb-3">
+                  Changes detected in this tender compared to its previous version:
+                </p>
+                <div className="space-y-2">
+                  {corrigendumChanges.map((change, index) => {
+                    const isAdded = !change.oldValue && change.newValue;
+                    const isRemoved = change.oldValue && !change.newValue;
+                    const isModified = change.oldValue && change.newValue;
+
+                    const getChangeIcon = () => {
+                      if (isAdded) return <Plus className="w-4 h-4 text-emerald-500" />;
+                      if (isRemoved) return <Minus className="w-4 h-4 text-red-500" />;
+                      return <RefreshCw className="w-4 h-4 text-amber-500" />;
+                    };
+
+                    const getChangeColor = () => {
+                      if (isAdded) return "bg-emerald-500/10 border-emerald-200 dark:border-emerald-800";
+                      if (isRemoved) return "bg-red-500/10 border-red-200 dark:border-red-800";
+                      return "bg-amber-500/10 border-amber-200 dark:border-amber-800";
+                    };
+
+                    const formatFieldName = (name: string) => {
+                      return name
+                        .replace(/_/g, ' ')
+                        .replace(/([A-Z])/g, ' $1')
+                        .replace(/^./, str => str.toUpperCase())
+                        .trim();
+                    };
+
+                    return (
+                      <div key={index} className={`rounded-md border p-3 ${getChangeColor()}`}>
+                        <div className="flex items-start gap-2">
+                          {getChangeIcon()}
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-sm text-foreground">
+                              {formatFieldName(change.fieldName)}
+                            </div>
+                            {isModified && (
+                              <div className="flex items-center gap-2 mt-1 text-xs flex-wrap">
+                                <span className="text-muted-foreground line-through">
+                                  {String(change.oldValue)}
+                                </span>
+                                <ArrowRight className="w-3 h-3 text-muted-foreground shrink-0" />
+                                <span className="font-medium text-foreground">
+                                  {String(change.newValue)}
+                                </span>
+                              </div>
+                            )}
+                            {isAdded && (
+                              <div className="text-xs text-foreground mt-1">
+                                <span className="font-medium">Added:</span> {String(change.newValue)}
+                              </div>
+                            )}
+                            {isRemoved && (
+                              <div className="text-xs text-foreground mt-1">
+                                <span className="font-medium">Removed:</span> {String(change.oldValue)}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-muted-foreground mt-3">
+                  The tender remains in its original category and workflow. Review these changes before proceeding.
+                </p>
               </div>
             )}
 
