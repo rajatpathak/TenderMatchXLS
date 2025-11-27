@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { db } from "../server/db";
 import { users, companyCriteria, negativeKeywords } from "../shared/schema";
 import { sql } from "drizzle-orm";
