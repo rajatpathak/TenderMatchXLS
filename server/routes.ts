@@ -1300,21 +1300,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         member = await storage.getTeamMemberByUsername(user.username);
       }
       
-      // Auto-create admin team member if admin user and no member exists
-      if (!member && user?.role === 'admin') {
-        const bcrypt = await import('bcrypt');
-        const hashedPassword = await bcrypt.hash('admin', 10);
-        member = await storage.createTeamMember({
-          username: user.username || 'admin',
-          password: hashedPassword,
-          email: user.email || 'admin@tendermatch.com',
-          fullName: 'Admin User',
-          role: 'admin',
-          isActive: true,
-          createdBy: null,
-        });
-      }
-      
       if (!member) {
         return res.status(404).json({ message: "No team member found for this user" });
       }
