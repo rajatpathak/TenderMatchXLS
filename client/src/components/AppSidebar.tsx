@@ -132,13 +132,6 @@ export function AppSidebar() {
       badge: stats?.missed,
       color: "text-gray-500",
     },
-    {
-      title: "Corrigendum",
-      url: "/corrigendum",
-      icon: FileStack,
-      badge: stats?.corrigendum,
-      color: "text-purple-500",
-    },
   ];
 
   const workflowItems = [
