@@ -526,6 +526,7 @@ export class DatabaseStorage implements IStorage {
   // Data management
   async deleteAllData(): Promise<void> {
     // Delete in order to respect foreign key constraints (children first, then parents)
+    await db.delete(workflowHistory);
     await db.delete(biddingSubmissions);
     await db.delete(tenderAssignments);
     await db.delete(corrigendumChanges);

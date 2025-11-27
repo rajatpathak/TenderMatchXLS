@@ -460,37 +460,67 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
     let duplicateCount = 0;
     let corrigendumCount = 0;
     let processedCount = 0;
+    let totalRows = 0;
 
     // Process all sheets row by row
-    let totalRows = 0;
     for (const sheetName of workbook.SheetNames) {
-      const normalizedName = sheetName.toLowerCase().replace(/[-_\s]/g, '');
-      const tenderType: 'gem' | 'non_gem' = (normalizedName.includes('gem') && !normalizedName.includes('nongem') && !normalizedName.includes('non')) ? 'gem' : 'non_gem';
-      
-      const sheet = workbook.Sheets[sheetName];
-      const data = XLSX.utils.sheet_to_json(sheet);
-      totalRows += data.length;
-      console.log(`[Upload ${uploadId}] Processing "${sheetName}": ${data.length} rows (${tenderType})`);
-      
-      for (let i = 0; i < data.length; i++) {
-        try {
-          const row = data[i];
-          const rowIndex = i + 2;
-          
-          const tenderData = parseTenderFromRow(row, tenderType, sheet, rowIndex);
-          if (!tenderData?.t247Id) {
-            failedCount++;
-            continue;
-          }
+      try {
+        const normalizedName = sheetName.toLowerCase().replace(/[-_\s]/g, '');
+        const tenderType: 'gem' | 'non_gem' = (normalizedName.includes('gem') && !normalizedName.includes('nongem') && !normalizedName.includes('non')) ? 'gem' : 'non_gem';
+        
+        const sheet = workbook.Sheets[sheetName];
+        const data = XLSX.utils.sheet_to_json(sheet);
+        totalRows += data.length;
+        console.log(`[Upload ${uploadId}] Sheet "${sheetName}": ${data.length} rows (${tenderType})`);
+        
+        for (let i = 0; i < data.length; i++) {
+          try {
+            const row = data[i];
+            const rowIndex = i + 2;
+            
+            const tenderData = parseTenderFromRow(row, tenderType, sheet, rowIndex);
+            if (!tenderData?.t247Id) {
+              failedCount++;
+              continue;
+            }
 
-          const existingTender = await storage.getTenderByT247Id(tenderData.t247Id);
-          const matchResult = analyzeEligibility(tenderData, criteria, negativeKeywords, tenderData.excelMsmeExemption, tenderData.excelStartupExemption, tenderData.similarCategory);
-          const { excelMsmeExemption, excelStartupExemption, similarCategory, ...tenderInsertData } = tenderData;
+            const existingTender = await storage.getTenderByT247Id(tenderData.t247Id);
+            const matchResult = analyzeEligibility(tenderData, criteria, negativeKeywords, tenderData.excelMsmeExemption, tenderData.excelStartupExemption, tenderData.similarCategory);
+            const { excelMsmeExemption, excelStartupExemption, similarCategory, ...tenderInsertData } = tenderData;
 
-          if (existingTender) {
-            const changes = detectCorrigendumChanges(existingTender, tenderInsertData);
-            if (changes.length > 0) {
-              await storage.updateTender(existingTender.id, {
+            if (existingTender) {
+              const changes = detectCorrigendumChanges(existingTender, tenderInsertData);
+              if (changes.length > 0) {
+                await storage.updateTender(existingTender.id, {
+                  ...tenderInsertData,
+                  uploadId,
+                  matchPercentage: matchResult.matchPercentage,
+                  isMsmeExempted: matchResult.isMsmeExempted,
+                  isStartupExempted: matchResult.isStartupExempted,
+                  tags: matchResult.tags,
+                  analysisStatus: matchResult.analysisStatus,
+                  eligibilityStatus: existingTender.isManualOverride ? existingTender.eligibilityStatus : matchResult.eligibilityStatus,
+                  notRelevantKeyword: matchResult.notRelevantKeyword,
+                  isCorrigendum: true,
+                  isMissed: false,
+                  missedAt: null,
+                });
+                
+                for (const change of changes) {
+                  await storage.createCorrigendumChange({
+                    tenderId: existingTender.id,
+                    originalTenderId: existingTender.id,
+                    fieldName: change.fieldName,
+                    oldValue: change.oldValue,
+                    newValue: change.newValue,
+                  });
+                }
+                corrigendumCount++;
+              } else {
+                duplicateCount++;
+              }
+            } else {
+              await storage.createTender({
                 ...tenderInsertData,
                 uploadId,
                 matchPercentage: matchResult.matchPercentage,
@@ -498,64 +528,41 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
                 isStartupExempted: matchResult.isStartupExempted,
                 tags: matchResult.tags,
                 analysisStatus: matchResult.analysisStatus,
-                eligibilityStatus: existingTender.isManualOverride ? existingTender.eligibilityStatus : matchResult.eligibilityStatus,
+                eligibilityStatus: matchResult.eligibilityStatus,
                 notRelevantKeyword: matchResult.notRelevantKeyword,
-                isCorrigendum: true,
-                isMissed: false,
-                missedAt: null,
+                isCorrigendum: false,
+                originalTenderId: null,
               });
-              
-              for (const change of changes) {
-                await storage.createCorrigendumChange({
-                  tenderId: existingTender.id,
-                  originalTenderId: existingTender.id,
-                  fieldName: change.fieldName,
-                  oldValue: change.oldValue,
-                  newValue: change.newValue,
-                });
-              }
-              corrigendumCount++;
-            } else {
-              duplicateCount++;
+              newCount++;
             }
-          } else {
-            await storage.createTender({
-              ...tenderInsertData,
-              uploadId,
-              matchPercentage: matchResult.matchPercentage,
-              isMsmeExempted: matchResult.isMsmeExempted,
-              isStartupExempted: matchResult.isStartupExempted,
-              tags: matchResult.tags,
-              analysisStatus: matchResult.analysisStatus,
-              eligibilityStatus: matchResult.eligibilityStatus,
-              notRelevantKeyword: matchResult.notRelevantKeyword,
-              isCorrigendum: false,
-              originalTenderId: null,
-            });
-            newCount++;
+
+            if (tenderType === 'gem') gemCount++;
+            else nonGemCount++;
+
+            processedCount++;
+          } catch (err) {
+            console.error(`[Upload ${uploadId}] Row error:`, (err as any).message);
+            failedCount++;
           }
 
-          if (tenderType === 'gem') gemCount++;
-          else nonGemCount++;
-
-          processedCount++;
-        } catch (err) {
-          console.error(`[Upload ${uploadId}] Row ${i + 2} error:`, (err as any).message);
-          failedCount++;
+          // Update progress every 50 rows
+          if (processedCount % 50 === 0) {
+            progress.processedRows = processedCount;
+            progress.gemCount = gemCount;
+            progress.nonGemCount = nonGemCount;
+            progress.newCount = newCount;
+            progress.duplicateCount = duplicateCount;
+            progress.corrigendumCount = corrigendumCount;
+            sendProgressUpdate(uploadId);
+            console.log(`[Upload ${uploadId}] Progress: ${processedCount} rows processed`);
+          }
         }
-
-        // Update progress every 50 rows
-        if (processedCount % 50 === 0) {
-          progress.processedRows = processedCount;
-          progress.gemCount = gemCount;
-          progress.nonGemCount = nonGemCount;
-          progress.newCount = newCount;
-          progress.duplicateCount = duplicateCount;
-          progress.corrigendumCount = corrigendumCount;
-          sendProgressUpdate(uploadId);
-        }
+      } catch (sheetErr) {
+        console.error(`[Upload ${uploadId}] Sheet "${sheetName}" error:`, (sheetErr as any).message);
       }
     }
+
+    console.log(`[Upload ${uploadId}] Finished processing all sheets. Updating database...`);
 
     // Final update to database
     await storage.updateExcelUpload(uploadId, {
@@ -575,8 +582,9 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
     progress.newCount = newCount;
     progress.duplicateCount = duplicateCount;
     progress.corrigendumCount = corrigendumCount;
-    console.log(`[Upload ${uploadId}] ✅ COMPLETE: ${processedCount}/${totalRows} processed | New: ${newCount}, Duplicate: ${duplicateCount}, Corrigendum: ${corrigendumCount}, Failed: ${failedCount}`);
     sendProgressUpdate(uploadId);
+    
+    console.log(`[Upload ${uploadId}] ✅ COMPLETE: ${processedCount}/${totalRows} processed | New: ${newCount}, Duplicate: ${duplicateCount}, Corrigendum: ${corrigendumCount}, Failed: ${failedCount}`);
 
     setTimeout(() => uploadProgressStore.delete(uploadId), 60000);
   } catch (error: any) {
