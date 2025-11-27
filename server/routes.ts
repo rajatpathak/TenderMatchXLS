@@ -871,61 +871,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Excel upload with progress endpoint
-  app.post('/api/upload-with-progress', isAuthenticated, upload.single('file'), async (req: any, res) => {
-    try {
-      if (!req.file) {
-        return res.status(400).json({ message: "No file uploaded" });
-      }
-
-      const userId = req.user.id;
-      const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
-      
-      // Count total rows across all sheets
-      let totalRows = 0;
-      for (const sheetName of workbook.SheetNames) {
-        const sheet = workbook.Sheets[sheetName];
-        const data = XLSX.utils.sheet_to_json(sheet);
-        totalRows += data.length;
-      }
-
-      // Create upload record
-      const uploadRecord = await storage.createExcelUpload({
-        fileName: req.file.originalname,
-        uploadedBy: userId,
-        totalTenders: 0,
-        gemCount: 0,
-        nonGemCount: 0,
-      });
-
-      // Initialize progress tracking
-      uploadProgressStore.set(uploadRecord.id, {
-        gemCount: 0,
-        nonGemCount: 0,
-        failedCount: 0,
-        newCount: 0,
-        duplicateCount: 0,
-        corrigendumCount: 0,
-        totalRows,
-        currentSheet: '',
-        processedRows: 0,
-        startTime: Date.now(),
-        status: 'processing',
-        clients: new Set(),
-      });
-
-      // Return immediately with upload ID so client can connect to SSE
-      res.json({ uploadId: uploadRecord.id });
-
-      // Process in background
-      processExcelAsync(workbook, uploadRecord.id, userId);
-
-    } catch (error) {
-      console.error("Error starting upload:", error);
-      res.status(500).json({ message: "Failed to start upload" });
-    }
-  });
-
   // Excel upload endpoint - uses background processing for real-time progress
   app.post('/api/upload', isAuthenticated, upload.single('file'), async (req: any, res) => {
     try {
