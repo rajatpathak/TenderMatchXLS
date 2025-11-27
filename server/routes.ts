@@ -442,7 +442,7 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
   console.log(`[Upload ${uploadId}] Starting background processing with ${progress.totalRows} total rows`);
 
   try {
-    // Get company criteria for matching
+    // Get company criteria and keywords once
     let criteria = await storage.getCompanyCriteria();
     if (!criteria) {
       criteria = await storage.upsertCompanyCriteria({
@@ -451,8 +451,6 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
         updatedBy: userId,
       });
     }
-    
-    // Get negative keywords for filtering
     const negativeKeywords = await storage.getNegativeKeywords();
 
     let gemCount = 0;
@@ -461,92 +459,50 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
     let newCount = 0;
     let duplicateCount = 0;
     let corrigendumCount = 0;
+    let processedCount = 0;
 
-    // Process all sheets
+    // Collect all tenders to process
+    const allTenders: any[] = [];
     for (const sheetName of workbook.SheetNames) {
       const normalizedName = sheetName.toLowerCase().replace(/[-_\s]/g, '');
-      
-      // Determine tender type from sheet name
-      let tenderType: 'gem' | 'non_gem' = 'non_gem';
-      if (normalizedName.includes('gem') && !normalizedName.includes('nongem') && !normalizedName.includes('non')) {
-        tenderType = 'gem';
-      }
-      
-      progress.currentSheet = sheetName;
-      sendProgressUpdate(uploadId);
+      const tenderType: 'gem' | 'non_gem' = (normalizedName.includes('gem') && !normalizedName.includes('nongem') && !normalizedName.includes('non')) ? 'gem' : 'non_gem';
       
       const sheet = workbook.Sheets[sheetName];
       const data = XLSX.utils.sheet_to_json(sheet);
-      console.log(`[Upload ${uploadId}] Processing sheet "${sheetName}" as ${tenderType} with ${data.length} rows`);
+      console.log(`[Upload ${uploadId}] Sheet "${sheetName}": ${data.length} rows (${tenderType})`);
       
       for (let i = 0; i < data.length; i++) {
+        allTenders.push({ row: data[i], sheetName, tenderType, rowIndex: i + 2 });
+      }
+    }
+
+    console.log(`[Upload ${uploadId}] Total tenders to process: ${allTenders.length}`);
+
+    // Process in batches to avoid overwhelming the database
+    const BATCH_SIZE = 50;
+    for (let batchStart = 0; batchStart < allTenders.length; batchStart += BATCH_SIZE) {
+      const batchEnd = Math.min(batchStart + BATCH_SIZE, allTenders.length);
+      const batch = allTenders.slice(batchStart, batchEnd);
+
+      for (const item of batch) {
         try {
-          const row = data[i];
-          const excelRowIndex = i + 2;
+          const { row, sheetName, tenderType, rowIndex } = item;
           
-          try {
-            const tenderData = parseTenderFromRow(row, tenderType, sheet, excelRowIndex);
-            if (!tenderData || !tenderData.t247Id) {
-              throw new Error('Failed to parse tender data or missing T247 ID');
-            }
-            
-            // Check for duplicate T247 ID (corrigendum detection)
-            const existingTender = await storage.getTenderByT247Id(tenderData.t247Id!);
-            
-            // Use Excel exemption flags if available
-            const excelMsme = tenderData.excelMsmeExemption;
-            const excelStartup = tenderData.excelStartupExemption;
-            const tenderSimilarCategory = tenderData.similarCategory;
-            
-            // Analyze eligibility with negative keywords and Similar Category
-            const matchResult = analyzeEligibility(tenderData, criteria!, negativeKeywords, excelMsme, excelStartup, tenderSimilarCategory);
-            
-            // Remove temporary Excel fields before inserting
-            const { excelMsmeExemption, excelStartupExemption, ...tenderInsertData } = tenderData;
-            
-            if (existingTender) {
-              // UPDATE existing tender instead of creating duplicate
-              // Detect changes first (before updating)
-              const changes = detectCorrigendumChanges(existingTender, tenderInsertData);
-              
-              if (changes.length > 0) {
-                // Only update and mark as corrigendum if there are actual changes
-                await storage.updateTender(existingTender.id, {
-                  ...tenderInsertData,
-                  uploadId, // Update to latest upload
-                  matchPercentage: matchResult.matchPercentage,
-                  isMsmeExempted: matchResult.isMsmeExempted,
-                  isStartupExempted: matchResult.isStartupExempted,
-                  tags: matchResult.tags,
-                  analysisStatus: matchResult.analysisStatus,
-                  eligibilityStatus: existingTender.isManualOverride ? existingTender.eligibilityStatus : matchResult.eligibilityStatus,
-                  notRelevantKeyword: matchResult.notRelevantKeyword,
-                  isCorrigendum: true,
-                  // Reset missed status if deadline was updated
-                  isMissed: false,
-                  missedAt: null,
-                });
-                
-                // Save corrigendum changes
-                for (const change of changes) {
-                  await storage.createCorrigendumChange({
-                    tenderId: existingTender.id,
-                    originalTenderId: existingTender.id,
-                    fieldName: change.fieldName,
-                    oldValue: change.oldValue,
-                    newValue: change.newValue,
-                  });
-                }
-                corrigendumCount++;
-                progress.corrigendumCount = corrigendumCount;
-              } else {
-                // If no changes, it's a duplicate
-                duplicateCount++;
-                progress.duplicateCount = duplicateCount;
-              }
-            } else {
-              // Create new tender
-              const fullTenderData: InsertTender = {
+          const tenderData = parseTenderFromRow(row, tenderType, workbook.Sheets[sheetName], rowIndex);
+          if (!tenderData?.t247Id) {
+            console.warn(`[Upload ${uploadId}] Row ${rowIndex}: missing T247 ID`);
+            failedCount++;
+            continue;
+          }
+
+          const existingTender = await storage.getTenderByT247Id(tenderData.t247Id);
+          const matchResult = analyzeEligibility(tenderData, criteria, negativeKeywords, tenderData.excelMsmeExemption, tenderData.excelStartupExemption, tenderData.similarCategory);
+          const { excelMsmeExemption, excelStartupExemption, similarCategory, ...tenderInsertData } = tenderData;
+
+          if (existingTender) {
+            const changes = detectCorrigendumChanges(existingTender, tenderInsertData);
+            if (changes.length > 0) {
+              await storage.updateTender(existingTender.id, {
                 ...tenderInsertData,
                 uploadId,
                 matchPercentage: matchResult.matchPercentage,
@@ -554,46 +510,67 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
                 isStartupExempted: matchResult.isStartupExempted,
                 tags: matchResult.tags,
                 analysisStatus: matchResult.analysisStatus,
-                eligibilityStatus: matchResult.eligibilityStatus,
+                eligibilityStatus: existingTender.isManualOverride ? existingTender.eligibilityStatus : matchResult.eligibilityStatus,
                 notRelevantKeyword: matchResult.notRelevantKeyword,
-                isCorrigendum: false,
-                originalTenderId: null,
-              };
+                isCorrigendum: true,
+                isMissed: false,
+                missedAt: null,
+              });
               
-              await storage.createTender(fullTenderData);
-              newCount++;
-              progress.newCount = newCount;
-            }
-            
-            if (tenderType === 'gem') {
-              gemCount++;
-              progress.gemCount = gemCount;
+              for (const change of changes) {
+                await storage.createCorrigendumChange({
+                  tenderId: existingTender.id,
+                  originalTenderId: existingTender.id,
+                  fieldName: change.fieldName,
+                  oldValue: change.oldValue,
+                  newValue: change.newValue,
+                });
+              }
+              corrigendumCount++;
             } else {
-              nonGemCount++;
-              progress.nonGemCount = nonGemCount;
+              duplicateCount++;
             }
-          } catch (rowErr) {
-            console.error(`[Upload ${uploadId}] Error processing row ${i + 1}:`, rowErr);
-            failedCount++;
-            progress.failedCount = failedCount;
+          } else {
+            await storage.createTender({
+              ...tenderInsertData,
+              uploadId,
+              matchPercentage: matchResult.matchPercentage,
+              isMsmeExempted: matchResult.isMsmeExempted,
+              isStartupExempted: matchResult.isStartupExempted,
+              tags: matchResult.tags,
+              analysisStatus: matchResult.analysisStatus,
+              eligibilityStatus: matchResult.eligibilityStatus,
+              notRelevantKeyword: matchResult.notRelevantKeyword,
+              isCorrigendum: false,
+              originalTenderId: null,
+            });
+            newCount++;
           }
+
+          if (tenderType === 'gem') gemCount++;
+          else nonGemCount++;
+
+          processedCount++;
         } catch (err) {
-          console.error(`[Upload ${uploadId}] Outer error at row ${i + 1}:`, err);
+          console.error(`[Upload ${uploadId}] Error processing tender:`, err);
           failedCount++;
-          progress.failedCount = failedCount;
-        }
-        
-        progress.processedRows++;
-        
-        // Send update every 5 rows or on every row if less than 20 total
-        if (progress.processedRows % 5 === 0 || progress.totalRows < 20) {
-          sendProgressUpdate(uploadId);
         }
       }
-      console.log(`[Upload ${uploadId}] Finished processing sheet "${sheetName}". GEM: ${gemCount}, Non-GEM: ${nonGemCount}, New: ${newCount}, Duplicate: ${duplicateCount}`);
+
+      // Update progress after each batch
+      progress.processedRows = processedCount;
+      progress.gemCount = gemCount;
+      progress.nonGemCount = nonGemCount;
+      progress.newCount = newCount;
+      progress.duplicateCount = duplicateCount;
+      progress.corrigendumCount = corrigendumCount;
+      sendProgressUpdate(uploadId);
+
+      // Yield to event loop
+      await new Promise(resolve => setImmediate(resolve));
     }
 
-    // Update upload record with counts
+    // Final update to database
     await storage.updateExcelUpload(uploadId, {
       totalTenders: gemCount + nonGemCount,
       gemCount,
@@ -605,25 +582,22 @@ async function processExcelAsync(workbook: XLSX.WorkBook, uploadId: number, user
 
     // Mark as complete
     progress.status = 'complete';
+    progress.processedRows = allTenders.length;
     progress.gemCount = gemCount;
     progress.nonGemCount = nonGemCount;
-    progress.failedCount = failedCount;
     progress.newCount = newCount;
     progress.duplicateCount = duplicateCount;
     progress.corrigendumCount = corrigendumCount;
-    console.log(`[Upload ${uploadId}] Complete! New: ${newCount}, Duplicate: ${duplicateCount}, Corrigendum: ${corrigendumCount}`);
+    console.log(`[Upload ${uploadId}] ✅ COMPLETE: ${processedCount}/${allTenders.length} processed | New: ${newCount}, Duplicate: ${duplicateCount}, Corrigendum: ${corrigendumCount}, Failed: ${failedCount}`);
     sendProgressUpdate(uploadId);
 
-    // Clean up after a delay
-    setTimeout(() => {
-      uploadProgressStore.delete(uploadId);
-    }, 60000);
-
+    setTimeout(() => uploadProgressStore.delete(uploadId), 60000);
   } catch (error: any) {
-    console.error(`[Upload ${uploadId}] Error processing Excel:`, error);
+    console.error(`[Upload ${uploadId}] ❌ FATAL ERROR:`, error);
     progress.status = 'error';
     progress.message = error.message || 'Processing failed';
     sendProgressUpdate(uploadId);
+    setTimeout(() => uploadProgressStore.delete(uploadId), 5000);
   }
 }
 
