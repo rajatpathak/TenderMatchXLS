@@ -181,59 +181,7 @@ export default function Landing() {
                     </Button>
                   </form>
                   
-                  <div className="mt-6 pt-4 border-t border-border">
-                    <p className="text-xs text-muted-foreground text-center mb-3">Test Credentials</p>
-                    <div className="space-y-2">
-                      <button
-                        type="button"
-                        onClick={() => { setUsername("admin"); setPassword("admin"); }}
-                        className="w-full p-2 text-left text-sm rounded-md border border-border hover-elevate"
-                        data-testid="button-preset-admin"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium text-foreground">Admin</span>
-                          <span className="text-xs px-2 py-0.5 rounded bg-primary/10 text-primary">admin / admin</span>
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-1">Full access - manage team, assign tenders</p>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setUsername("manager1"); setPassword("manager123"); }}
-                        className="w-full p-2 text-left text-sm rounded-md border border-border hover-elevate"
-                        data-testid="button-preset-manager"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium text-foreground">Manager</span>
-                          <span className="text-xs px-2 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400">manager1 / manager123</span>
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-1">Assign tenders, review submissions</p>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setUsername("bidder1"); setPassword("bidder123"); }}
-                        className="w-full p-2 text-left text-sm rounded-md border border-border hover-elevate"
-                        data-testid="button-preset-bidder1"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium text-foreground">Bidder 1</span>
-                          <span className="text-xs px-2 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">bidder1 / bidder123</span>
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-1">Update workflow status on assigned tenders</p>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setUsername("bidder2"); setPassword("bidder123"); }}
-                        className="w-full p-2 text-left text-sm rounded-md border border-border hover-elevate"
-                        data-testid="button-preset-bidder2"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium text-foreground">Bidder 2</span>
-                          <span className="text-xs px-2 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">bidder2 / bidder123</span>
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-1">Update workflow status on assigned tenders</p>
-                      </button>
-                    </div>
-                  </div>
+
                 </CardContent>
               </Card>
             </div>
