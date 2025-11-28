@@ -401,6 +401,11 @@ export function AppSidebar() {
             <LogOut className="w-4 h-4" />
           </Button>
         </div>
+        <div className="mt-2 pt-2 border-t border-sidebar-border">
+          <p className="text-xs text-sidebar-foreground/40 text-center">
+            Powered by Appentus
+          </p>
+        </div>
       </SidebarFooter>
     </Sidebar>
   );

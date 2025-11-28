@@ -371,25 +371,27 @@ export function TenderCard({ tender, onClick, showQuickActions = true, showAssig
             )}
           </div>
           <div className="flex items-center gap-1 shrink-0">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button 
-                  size="icon" 
-                  variant="ghost"
-                  className="text-blue-600 dark:text-blue-400 hover:bg-blue-500/10"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onAssign?.(tender);
-                  }}
-                  data-testid={`button-assign-tender-${tender.id}`}
-                >
-                  <UserPlus className="w-4 h-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Assign this tender</p>
-              </TooltipContent>
-            </Tooltip>
+            {onAssign && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    size="icon" 
+                    variant="ghost"
+                    className="text-blue-600 dark:text-blue-400 hover:bg-blue-500/10"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAssign(tender);
+                    }}
+                    data-testid={`button-assign-tender-${tender.id}`}
+                  >
+                    <UserPlus className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Assign this tender</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
             <Button 
               size="icon" 
               variant="ghost" 
