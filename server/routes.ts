@@ -1288,23 +1288,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/me/team-member', isAuthenticated, async (req: any, res) => {
     try {
       const user = req.user;
-      console.log('🔍 User data:', JSON.stringify(user, null, 2));
-      let member = null;
       
-      // Try to find by email first
-      if (user?.email) {
-        console.log('🔍 Looking up by email:', user.email);
-        member = await storage.getTeamMemberByEmail(user.email);
+      // For admin users, return a mock team member response
+      if (user?.role === 'admin') {
+        return res.json({
+          id: 1,
+          username: user.username,
+          email: user.email,
+          fullName: `${user.firstName} ${user.lastName}`.trim(),
+          role: 'admin',
+          isActive: true,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        });
       }
       
-      // If no member found and user is admin, try by username
+      // For team members, try to find actual record
+      let member = null;
+      if (user?.email) {
+        member = await storage.getTeamMemberByEmail(user.email);
+      }
       if (!member && user?.username) {
-        console.log('🔍 Looking up by username:', user.username);
         member = await storage.getTeamMemberByUsername(user.username);
       }
       
       if (!member) {
-        console.log('❌ No team member found for user:', user?.username, user?.email);
         return res.status(404).json({ message: "No team member found for this user" });
       }
       
@@ -1455,6 +1463,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/assignments/my', isAuthenticated, async (req, res) => {
     try {
       const user = (req as any).user;
+      
+      // For admin users, return all assignments
+      if (user?.role === 'admin') {
+        const assignments = await storage.getTenderAssignments();
+        return res.json(assignments);
+      }
+      
       if (!user?.email) {
         return res.status(400).json({ message: "User email not found" });
       }
@@ -1505,7 +1520,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Check if tender is already assigned to prevent duplicates
       const existingAssignment = await storage.getAssignmentByTenderId(tenderId);
-      if (existingAssignment) {
+      if (existingAssignment && existingAssignment.isActive) {
         return res.status(409).json({ message: "This tender is already assigned to someone else" });
       }
 
