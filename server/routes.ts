@@ -1283,45 +1283,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // TEAM MANAGEMENT & WORKFLOW ROUTES
   // ==========================================
 
-  // Team Member Routes
-  // Get current team member based on authenticated user's email
   app.get('/api/me/team-member', isAuthenticated, async (req: any, res) => {
-    try {
-      const user = req.user;
-      
-      // For admin users, return a mock team member response
-      if (user?.role === 'admin') {
-        return res.json({
-          id: 1,
-          username: user.username,
-          email: user.email,
-          fullName: `${user.firstName} ${user.lastName}`.trim(),
-          role: 'admin',
-          isActive: true,
-          createdAt: new Date(),
-          updatedAt: new Date()
-        });
-      }
-      
-      // For team members, try to find actual record
-      let member = null;
-      if (user?.email) {
-        member = await storage.getTeamMemberByEmail(user.email);
-      }
-      if (!member && user?.username) {
-        member = await storage.getTeamMemberByUsername(user.username);
-      }
-      
-      if (!member) {
-        return res.status(404).json({ message: "No team member found for this user" });
-      }
-      
-      const { password, ...safeMember } = member;
-      res.json(safeMember);
-    } catch (error) {
-      console.error("Error fetching current team member:", error);
-      res.status(500).json({ message: "Failed to fetch team member" });
-    }
+    const user = req.user;
+    res.json({
+      id: user.teamMemberId || 1,
+      username: user.username,
+      email: user.email,
+      fullName: `${user.firstName} ${user.lastName}`.trim(),
+      role: user.role,
+      isActive: true
+    });
   });
 
   app.get('/api/team-members', isAuthenticated, async (req, res) => {
@@ -1459,32 +1430,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get assignments for current logged-in user (My Work)
   app.get('/api/assignments/my', isAuthenticated, async (req, res) => {
     try {
       const user = (req as any).user;
-      
-      // For admin users, return all assignments
-      if (user?.role === 'admin') {
+      if (user.role === 'admin') {
         const assignments = await storage.getTenderAssignments();
         return res.json(assignments);
       }
-      
-      if (!user?.email) {
-        return res.status(400).json({ message: "User email not found" });
-      }
-      
-      // Find the team member by email
-      const teamMember = await storage.getTeamMemberByEmail(user.email);
-      if (!teamMember) {
-        return res.json([]); // Return empty if user is not a team member
-      }
-      
-      const assignments = await storage.getAssignmentsByUserId(teamMember.id);
+      const assignments = await storage.getAssignmentsByUserId(user.teamMemberId);
       res.json(assignments);
     } catch (error) {
-      console.error("Error fetching my assignments:", error);
-      res.status(500).json({ message: "Failed to fetch my assignments" });
+      res.status(500).json({ message: "Failed to fetch assignments" });
     }
   });
 
@@ -1518,10 +1474,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Tender ID, assignee, and assigner are required" });
       }
 
-      // Check if tender is already assigned to prevent duplicates
       const existingAssignment = await storage.getAssignmentByTenderId(tenderId);
-      if (existingAssignment && existingAssignment.isActive) {
-        return res.status(409).json({ message: "This tender is already assigned to someone else" });
+      if (existingAssignment?.isActive) {
+        return res.status(409).json({ message: "Tender already assigned" });
       }
 
       const assignment = await storage.createTenderAssignment({
