@@ -1288,19 +1288,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/me/team-member', isAuthenticated, async (req: any, res) => {
     try {
       const user = req.user;
+      console.log('🔍 User data:', JSON.stringify(user, null, 2));
       let member = null;
       
       // Try to find by email first
       if (user?.email) {
+        console.log('🔍 Looking up by email:', user.email);
         member = await storage.getTeamMemberByEmail(user.email);
       }
       
       // If no member found and user is admin, try by username
       if (!member && user?.username) {
+        console.log('🔍 Looking up by username:', user.username);
         member = await storage.getTeamMemberByUsername(user.username);
       }
       
       if (!member) {
+        console.log('❌ No team member found for user:', user?.username, user?.email);
         return res.status(404).json({ message: "No team member found for this user" });
       }
       
