@@ -6,7 +6,7 @@ import * as XLSX from "xlsx";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./simpleAuth";
 import { analyzeEligibility, detectCorrigendumChanges } from "./eligibilityMatcher";
-import { type InsertTender, tenderResultStatuses } from "@shared/schema";
+import { type InsertTender, tenderResultStatuses, presentationStatuses, clarificationStages } from "@shared/schema";
 import { z } from "zod";
 
 // Validation schemas for tender results
@@ -21,6 +21,67 @@ const createTenderResultSchema = z.object({
 const updateTenderResultStatusSchema = z.object({
   status: z.enum(tenderResultStatuses as [string, ...string[]], {
     errorMap: () => ({ message: "Invalid status" })
+  }),
+  note: z.string().optional(),
+});
+
+// Validation schemas for presentations
+const departmentContactSchema = z.object({
+  name: z.string().optional(),
+  phone: z.string().optional(),
+  email: z.string().email().optional().or(z.literal('')),
+});
+
+const createPresentationSchema = z.object({
+  referenceId: z.string().min(1, "Tender ID is required"),
+  tenderId: z.number().nullable().optional(),
+  scheduledDate: z.string().min(1, "Scheduled date is required"),
+  scheduledTime: z.string().min(1, "Scheduled time is required"),
+  assignedTo: z.number().min(1, "Assigned user is required"),
+  departmentContacts: z.array(departmentContactSchema).optional().default([]),
+  notes: z.string().optional(),
+});
+
+const updatePresentationSchema = z.object({
+  referenceId: z.string().optional(),
+  tenderId: z.number().nullable().optional(),
+  scheduledDate: z.string().optional(),
+  scheduledTime: z.string().optional(),
+  assignedTo: z.number().optional(),
+  departmentContacts: z.array(departmentContactSchema).optional(),
+  notes: z.string().optional(),
+});
+
+const updatePresentationStatusSchema = z.object({
+  status: z.enum(presentationStatuses as [string, ...string[]], {
+    errorMap: () => ({ message: "Invalid presentation status" })
+  }),
+  note: z.string().optional(),
+});
+
+// Validation schemas for clarifications
+const createClarificationSchema = z.object({
+  referenceId: z.string().min(1, "Tender ID is required"),
+  tenderId: z.number().nullable().optional(),
+  clarificationDetails: z.string().min(1, "Clarification details are required"),
+  assignedTo: z.number().min(1, "Assigned user is required"),
+  departmentContacts: z.array(departmentContactSchema).optional().default([]),
+  notes: z.string().optional(),
+});
+
+const updateClarificationSchema = z.object({
+  referenceId: z.string().optional(),
+  tenderId: z.number().nullable().optional(),
+  clarificationDetails: z.string().optional(),
+  assignedTo: z.number().optional(),
+  departmentContacts: z.array(departmentContactSchema).optional(),
+  notes: z.string().optional(),
+  responseDetails: z.string().optional(),
+});
+
+const updateClarificationStageSchema = z.object({
+  stage: z.enum(clarificationStages as [string, ...string[]], {
+    errorMap: () => ({ message: "Invalid clarification stage" })
   }),
   note: z.string().optional(),
 });
@@ -1903,6 +1964,427 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching tender result history:", error);
       res.status(500).json({ message: "Failed to fetch tender result history" });
+    }
+  });
+
+  // ===============================
+  // PRESENTATION ROUTES
+  // ===============================
+
+  // Get all presentations
+  app.get('/api/presentations', isAuthenticated, async (req, res) => {
+    try {
+      const presentations = await storage.getPresentations();
+      res.json(presentations);
+    } catch (error) {
+      console.error("Error fetching presentations:", error);
+      res.status(500).json({ message: "Failed to fetch presentations" });
+    }
+  });
+
+  // Get presentation by ID
+  app.get('/api/presentations/:id', isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const presentation = await storage.getPresentationById(id);
+      if (!presentation) {
+        return res.status(404).json({ message: "Presentation not found" });
+      }
+      res.json(presentation);
+    } catch (error) {
+      console.error("Error fetching presentation:", error);
+      res.status(500).json({ message: "Failed to fetch presentation" });
+    }
+  });
+
+  // Get presentations by reference ID
+  app.get('/api/presentations/by-reference/:referenceId', isAuthenticated, async (req, res) => {
+    try {
+      const referenceId = decodeURIComponent(req.params.referenceId);
+      const presentations = await storage.getPresentationsByReferenceId(referenceId);
+      res.json(presentations);
+    } catch (error) {
+      console.error("Error fetching presentations by reference:", error);
+      res.status(500).json({ message: "Failed to fetch presentations" });
+    }
+  });
+
+  // Create new presentation
+  app.post('/api/presentations', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      
+      const validationResult = createPresentationSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: "Validation failed", 
+          errors: validationResult.error.errors 
+        });
+      }
+      
+      const data = validationResult.data;
+
+      // Get team member ID for createdBy
+      let createdBy = user?.teamMemberId;
+      if (!createdBy) {
+        const members = await storage.getTeamMembers();
+        if (members.length > 0) {
+          createdBy = members[0].id;
+        } else {
+          return res.status(400).json({ message: "No team members available" });
+        }
+      }
+
+      const presentation = await storage.createPresentation({
+        referenceId: data.referenceId,
+        tenderId: data.tenderId || null,
+        scheduledDate: new Date(data.scheduledDate),
+        scheduledTime: data.scheduledTime,
+        assignedTo: data.assignedTo,
+        departmentContacts: data.departmentContacts || [],
+        notes: data.notes || null,
+        createdBy,
+      });
+
+      // Log the action
+      try {
+        await storage.createAuditLog({
+          action: 'create',
+          category: 'presentation',
+          userId: user?.id?.toString() || '0',
+          userName: user?.username || user?.email || 'unknown',
+          targetType: 'presentation',
+          targetId: presentation.id.toString(),
+          targetName: data.referenceId,
+          details: JSON.stringify({ scheduledDate: data.scheduledDate, scheduledTime: data.scheduledTime }),
+          ipAddress: req.ip || 'unknown',
+        });
+      } catch (e) {
+        console.error("Failed to log presentation creation:", e);
+      }
+
+      const fullPresentation = await storage.getPresentationById(presentation.id);
+      res.json(fullPresentation);
+    } catch (error) {
+      console.error("Error creating presentation:", error);
+      res.status(500).json({ message: "Failed to create presentation" });
+    }
+  });
+
+  // Update presentation
+  app.patch('/api/presentations/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      
+      const validationResult = updatePresentationSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: "Validation failed", 
+          errors: validationResult.error.errors 
+        });
+      }
+      
+      const data = validationResult.data;
+      const updateData: any = { ...data };
+      
+      if (data.scheduledDate) {
+        updateData.scheduledDate = new Date(data.scheduledDate);
+      }
+
+      const presentation = await storage.updatePresentation(id, updateData);
+      if (!presentation) {
+        return res.status(404).json({ message: "Presentation not found" });
+      }
+
+      const fullPresentation = await storage.getPresentationById(presentation.id);
+      res.json(fullPresentation);
+    } catch (error) {
+      console.error("Error updating presentation:", error);
+      res.status(500).json({ message: "Failed to update presentation" });
+    }
+  });
+
+  // Update presentation status
+  app.patch('/api/presentations/:id/status', isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const user = req.user;
+      
+      const validationResult = updatePresentationStatusSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: "Validation failed", 
+          errors: validationResult.error.errors 
+        });
+      }
+      
+      const { status, note } = validationResult.data;
+
+      let changedBy = user?.teamMemberId;
+      if (!changedBy) {
+        const members = await storage.getTeamMembers();
+        if (members.length > 0) {
+          changedBy = members[0].id;
+        } else {
+          return res.status(400).json({ message: "No team members available" });
+        }
+      }
+
+      const presentation = await storage.updatePresentationStatus(id, status, changedBy, note);
+      if (!presentation) {
+        return res.status(404).json({ message: "Presentation not found" });
+      }
+
+      const fullPresentation = await storage.getPresentationById(presentation.id);
+      res.json(fullPresentation);
+    } catch (error) {
+      console.error("Error updating presentation status:", error);
+      res.status(500).json({ message: "Failed to update presentation status" });
+    }
+  });
+
+  // Upload presentation file
+  app.post('/api/presentations/:id/upload', isAuthenticated, upload.single('file'), async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const user = req.user;
+      
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      // For now, store the file info (in production, save to disk/cloud storage)
+      const filePath = `presentations/${id}_${Date.now()}_${req.file.originalname}`;
+
+      let changedBy = user?.teamMemberId;
+      if (!changedBy) {
+        const members = await storage.getTeamMembers();
+        if (members.length > 0) {
+          changedBy = members[0].id;
+        } else {
+          return res.status(400).json({ message: "No team members available" });
+        }
+      }
+
+      const presentation = await storage.uploadPresentationFile(id, filePath, changedBy);
+      if (!presentation) {
+        return res.status(404).json({ message: "Presentation not found" });
+      }
+
+      const fullPresentation = await storage.getPresentationById(presentation.id);
+      res.json(fullPresentation);
+    } catch (error) {
+      console.error("Error uploading presentation file:", error);
+      res.status(500).json({ message: "Failed to upload presentation file" });
+    }
+  });
+
+  // Delete presentation
+  app.delete('/api/presentations/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deletePresentation(id);
+      res.json({ message: "Presentation deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting presentation:", error);
+      res.status(500).json({ message: "Failed to delete presentation" });
+    }
+  });
+
+  // ===============================
+  // CLARIFICATION ROUTES
+  // ===============================
+
+  // Get all clarifications
+  app.get('/api/clarifications', isAuthenticated, async (req, res) => {
+    try {
+      const clarifications = await storage.getClarifications();
+      res.json(clarifications);
+    } catch (error) {
+      console.error("Error fetching clarifications:", error);
+      res.status(500).json({ message: "Failed to fetch clarifications" });
+    }
+  });
+
+  // Get clarification by ID
+  app.get('/api/clarifications/:id', isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const clarification = await storage.getClarificationById(id);
+      if (!clarification) {
+        return res.status(404).json({ message: "Clarification not found" });
+      }
+      res.json(clarification);
+    } catch (error) {
+      console.error("Error fetching clarification:", error);
+      res.status(500).json({ message: "Failed to fetch clarification" });
+    }
+  });
+
+  // Get clarifications by reference ID
+  app.get('/api/clarifications/by-reference/:referenceId', isAuthenticated, async (req, res) => {
+    try {
+      const referenceId = decodeURIComponent(req.params.referenceId);
+      const clarifications = await storage.getClarificationsByReferenceId(referenceId);
+      res.json(clarifications);
+    } catch (error) {
+      console.error("Error fetching clarifications by reference:", error);
+      res.status(500).json({ message: "Failed to fetch clarifications" });
+    }
+  });
+
+  // Create new clarification
+  app.post('/api/clarifications', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      
+      const validationResult = createClarificationSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: "Validation failed", 
+          errors: validationResult.error.errors 
+        });
+      }
+      
+      const data = validationResult.data;
+
+      // Get team member ID for createdBy
+      let createdBy = user?.teamMemberId;
+      if (!createdBy) {
+        const members = await storage.getTeamMembers();
+        if (members.length > 0) {
+          createdBy = members[0].id;
+        } else {
+          return res.status(400).json({ message: "No team members available" });
+        }
+      }
+
+      const clarification = await storage.createClarification({
+        referenceId: data.referenceId,
+        tenderId: data.tenderId || null,
+        clarificationDetails: data.clarificationDetails,
+        assignedTo: data.assignedTo,
+        departmentContacts: data.departmentContacts || [],
+        notes: data.notes || null,
+        createdBy,
+      });
+
+      // Log the action
+      try {
+        await storage.createAuditLog({
+          action: 'create',
+          category: 'clarification',
+          userId: user?.id?.toString() || '0',
+          userName: user?.username || user?.email || 'unknown',
+          targetType: 'clarification',
+          targetId: clarification.id.toString(),
+          targetName: data.referenceId,
+          details: JSON.stringify({ clarificationDetails: data.clarificationDetails }),
+          ipAddress: req.ip || 'unknown',
+        });
+      } catch (e) {
+        console.error("Failed to log clarification creation:", e);
+      }
+
+      const fullClarification = await storage.getClarificationById(clarification.id);
+      res.json(fullClarification);
+    } catch (error) {
+      console.error("Error creating clarification:", error);
+      res.status(500).json({ message: "Failed to create clarification" });
+    }
+  });
+
+  // Update clarification
+  app.patch('/api/clarifications/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      
+      const validationResult = updateClarificationSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: "Validation failed", 
+          errors: validationResult.error.errors 
+        });
+      }
+      
+      const data = validationResult.data;
+      const clarification = await storage.updateClarification(id, data);
+      if (!clarification) {
+        return res.status(404).json({ message: "Clarification not found" });
+      }
+
+      const fullClarification = await storage.getClarificationById(clarification.id);
+      res.json(fullClarification);
+    } catch (error) {
+      console.error("Error updating clarification:", error);
+      res.status(500).json({ message: "Failed to update clarification" });
+    }
+  });
+
+  // Update clarification stage
+  app.patch('/api/clarifications/:id/stage', isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const user = req.user;
+      
+      const validationResult = updateClarificationStageSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: "Validation failed", 
+          errors: validationResult.error.errors 
+        });
+      }
+      
+      const { stage, note } = validationResult.data;
+
+      let changedBy = user?.teamMemberId;
+      if (!changedBy) {
+        const members = await storage.getTeamMembers();
+        if (members.length > 0) {
+          changedBy = members[0].id;
+        } else {
+          return res.status(400).json({ message: "No team members available" });
+        }
+      }
+
+      const clarification = await storage.updateClarificationStage(id, stage, changedBy, note);
+      if (!clarification) {
+        return res.status(404).json({ message: "Clarification not found" });
+      }
+
+      const fullClarification = await storage.getClarificationById(clarification.id);
+      res.json(fullClarification);
+    } catch (error) {
+      console.error("Error updating clarification stage:", error);
+      res.status(500).json({ message: "Failed to update clarification stage" });
+    }
+  });
+
+  // Delete clarification
+  app.delete('/api/clarifications/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteClarification(id);
+      res.json({ message: "Clarification deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting clarification:", error);
+      res.status(500).json({ message: "Failed to delete clarification" });
+    }
+  });
+
+  // ===============================
+  // UNIFIED TENDER ACTIVITY OVERVIEW
+  // ===============================
+
+  // Get all activities for a tender reference ID
+  app.get('/api/tender-activity/:referenceId', isAuthenticated, async (req, res) => {
+    try {
+      const referenceId = decodeURIComponent(req.params.referenceId);
+      const overview = await storage.getTenderActivityOverview(referenceId);
+      res.json(overview);
+    } catch (error) {
+      console.error("Error fetching tender activity overview:", error);
+      res.status(500).json({ message: "Failed to fetch tender activity overview" });
     }
   });
 
