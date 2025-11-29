@@ -268,4 +268,29 @@
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     background: hsl(var(--muted-foreground) / 0.5);
   }
+
+  /* Marquee animation for notification banner */
+  .marquee-container {
+    overflow: hidden;
+    width: 100%;
+  }
+
+  .marquee-content {
+    display: inline-flex;
+    white-space: nowrap;
+    animation: marquee 30s linear infinite;
+  }
+
+  .marquee-content:hover {
+    animation-play-state: paused;
+  }
+
+  @keyframes marquee {
+    0% {
+      transform: translateX(0%);
+    }
+    100% {
+      transform: translateX(-50%);
+    }
+  }
 }

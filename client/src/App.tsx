@@ -34,6 +34,7 @@ import {
   MissedTendersPage,
 } from "@/pages/TenderCategoryPage";
 import { NotificationBell } from "@/components/NotificationBell";
+import { NotificationMarquee } from "@/components/NotificationMarquee";
 
 function HeaderContent() {
   const { upload } = useUploadProgress();
@@ -90,6 +91,7 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
       <div className="flex h-screen w-full">
         <AppSidebar />
         <div className="flex flex-col flex-1 overflow-hidden">
+          <NotificationMarquee />
           <HeaderContent />
           <main className="flex-1 overflow-hidden bg-background">
             {children}
