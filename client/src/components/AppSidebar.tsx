@@ -84,7 +84,8 @@ export function AppSidebar() {
   const formatDate = (date: Date) => {
     return date.toLocaleDateString('en-US', {
       month: 'short',
-      day: 'numeric'
+      day: 'numeric',
+      weekday: 'long'
     });
   };
 
@@ -221,26 +222,13 @@ export function AppSidebar() {
   return (
     <Sidebar>
       <SidebarHeader className="border-b border-sidebar-border p-4">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-md bg-sidebar-primary flex items-center justify-center">
-            <FileSpreadsheet className="w-5 h-5 text-sidebar-primary-foreground" />
-          </div>
-          <span className="text-lg font-semibold text-sidebar-foreground">TenderMatch</span>
-        </div>
-        
-        <div className="mt-3 p-2 rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border border-blue-100 dark:border-blue-800/30">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-              <span className="text-xs font-medium text-blue-700 dark:text-blue-300">
-                {formatDate(currentTime)}
-              </span>
+        <div className="p-3 rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border border-blue-100 dark:border-blue-800/30">
+          <div className="text-center space-y-1">
+            <div className="text-sm font-medium text-blue-700 dark:text-blue-300">
+              {formatDate(currentTime)}
             </div>
-            <div className="flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-              <span className="text-xs font-mono font-semibold text-indigo-700 dark:text-indigo-300">
-                {formatTime(currentTime)}
-              </span>
+            <div className="text-lg font-mono font-bold text-indigo-700 dark:text-indigo-300">
+              {formatTime(currentTime)}
             </div>
           </div>
         </div>
