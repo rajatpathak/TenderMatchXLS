@@ -24,6 +24,8 @@ import AssignmentsHub from "@/pages/AssignmentsHub";
 import MyWork from "@/pages/MyWork";
 import AuditLogs from "@/pages/AuditLogs";
 import TenderResults from "@/pages/TenderResults";
+import Presentations from "@/pages/Presentations";
+import Clarifications from "@/pages/Clarifications";
 import { 
   EligibleTendersPage, 
   NotRelevantTendersPage, 
@@ -131,6 +133,8 @@ function Router() {
         <Route path="/my-work" component={MyWork} />
         <Route path="/submissions" component={SubmittedTenders} />
         <Route path="/tender-results" component={TenderResults} />
+        <Route path="/presentations" component={Presentations} />
+        <Route path="/clarifications" component={Clarifications} />
         <Route path="/team" component={TeamManagement} />
         <Route path="/audit-logs" component={AuditLogs} />
         <Route path="/settings" component={Settings} />

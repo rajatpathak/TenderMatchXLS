@@ -39,6 +39,8 @@ import {
   Shield,
   Calendar,
   Trophy,
+  Presentation,
+  HelpCircle,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest } from "@/lib/queryClient";
@@ -199,6 +201,22 @@ export function AppSidebar() {
       badge: undefined,
       color: "text-yellow-500",
       description: "Track tender outcomes",
+    },
+    {
+      title: "Presentations",
+      url: "/presentations",
+      icon: Presentation,
+      badge: undefined,
+      color: "text-pink-500",
+      description: "Schedule presentations",
+    },
+    {
+      title: "Clarifications",
+      url: "/clarifications",
+      icon: HelpCircle,
+      badge: undefined,
+      color: "text-cyan-500",
+      description: "Track clarifications",
     },
     {
       title: "Team Management",

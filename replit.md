@@ -46,6 +46,9 @@ TenderMatch is a web application for analyzing government tender eligibility wit
 10. **Tender Assignment**: Assign eligible tenders to bidders with priority and deadline
 11. **Workflow Management**: Track tender progress through bidding stages
 12. **Submission Tracking**: Record final bids with budget and portal reference
+13. **Tender Results**: Track tender outcomes (won/lost/cancelled) with history
+14. **Presentations**: Schedule presentations with team assignments, contact management, and PDF uploads
+15. **Clarifications**: Track tender clarifications through stages (submitted/pending/resolved) with team assignment
 
 ## Workflow Stages
 Tenders progress through the following stages after assignment:
@@ -85,6 +88,12 @@ Tenders progress through the following stages after assignment:
 - `team_members` - Team member profiles with roles
 - `tender_assignments` - Tender assignment tracking with workflow status
 - `bidding_submissions` - Final bid submission records
+- `tender_results` - Track tender outcomes (won/lost/cancelled)
+- `tender_result_history` - History of result status changes
+- `presentations` - Schedule presentations with team assignments
+- `presentation_history` - History of presentation status changes
+- `clarifications` - Track clarifications through stages
+- `clarification_history` - History of clarification stage changes
 
 ## API Endpoints
 ### Authentication
@@ -116,6 +125,29 @@ Tenders progress through the following stages after assignment:
 - `PUT /api/tender-assignments/:id/stage` - Update workflow stage
 - `GET /api/bidding-submissions` - List all submissions
 - `POST /api/bidding-submissions` - Record bid submission
+
+### Tender Results
+- `GET /api/tender-results` - List all tender results
+- `POST /api/tender-results` - Create tender result
+- `PUT /api/tender-results/:id` - Update tender result
+- `DELETE /api/tender-results/:id` - Delete tender result
+- `GET /api/tender-results/:id/history` - Get result history
+
+### Presentations
+- `GET /api/presentations` - List all presentations
+- `POST /api/presentations` - Create presentation
+- `PUT /api/presentations/:id` - Update presentation
+- `DELETE /api/presentations/:id` - Delete presentation
+- `POST /api/presentations/:id/status` - Update presentation status
+- `GET /api/presentations/:id/history` - Get presentation history
+
+### Clarifications
+- `GET /api/clarifications` - List all clarifications
+- `POST /api/clarifications` - Create clarification
+- `PUT /api/clarifications/:id` - Update clarification
+- `DELETE /api/clarifications/:id` - Delete clarification
+- `POST /api/clarifications/:id/stage` - Update clarification stage
+- `GET /api/clarifications/:id/history` - Get clarification history
 
 ### Configuration
 - `GET /api/company-criteria` - Get criteria
