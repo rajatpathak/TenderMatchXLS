@@ -592,7 +592,7 @@ export default function TenderResults() {
           <div className="relative flex-1 min-w-[200px] max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder="Search by Reference ID or Title..."
+              placeholder="Search by Tender ID or Title..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10"
@@ -635,7 +635,7 @@ export default function TenderResults() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Reference ID</TableHead>
+                    <TableHead>Tender ID</TableHead>
                     <TableHead>Current Status</TableHead>
                     <TableHead>Last Updated By</TableHead>
                     <TableHead>Timestamp</TableHead>
