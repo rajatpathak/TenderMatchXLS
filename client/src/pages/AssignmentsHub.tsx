@@ -309,7 +309,7 @@ export default function AssignmentsHub() {
             <p className="text-muted-foreground mt-1">Manage and track all tender assignments</p>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             {overdueCount > 0 && (
               <Card className="border-red-200 dark:border-red-800 hover-elevate">
                 <CardContent className="pt-4">
@@ -377,7 +377,7 @@ export default function AssignmentsHub() {
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base flex items-center gap-2">
                     <UserPlus className="w-4 h-4" />
-                    Ready to Assign
+                    Ready to Assign ({unassignedTenders.length})
                   </CardTitle>
                   <Button variant="ghost" size="sm" asChild>
                     <Link href="/tenders/eligible">
@@ -387,15 +387,44 @@ export default function AssignmentsHub() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {unassignedTenders.slice(0, 3).map((tender) => (
-                    <div key={tender.id} className="flex items-center justify-between gap-3 p-2 rounded-md hover:bg-muted/50" data-testid={`unassigned-tender-${tender.id}`}>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{tender.title}</p>
-                        <p className="text-xs text-muted-foreground">{tender.t247Id}</p>
+                    <Card key={tender.id} className="p-3 bg-blue-50/50 dark:bg-blue-950/20 border-blue-100 dark:border-blue-800" data-testid={`unassigned-tender-${tender.id}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0 space-y-1">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="secondary" className="text-xs font-mono">
+                              {tender.t247Id}
+                            </Badge>
+                            <Badge variant="outline" className="text-xs">
+                              {formatLakhs(tender.estimatedValue)}
+                            </Badge>
+                          </div>
+                          <p className="text-sm font-medium leading-tight">{tender.title}</p>
+                          {tender.department && (
+                            <p className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Building2 className="w-3 h-3" />
+                              {tender.department}
+                            </p>
+                          )}
+                          {tender.submissionDeadline && (
+                            <p className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Calendar className="w-3 h-3" />
+                              Due: {format(new Date(tender.submissionDeadline), "dd MMM yyyy")}
+                            </p>
+                          )}
+                        </div>
+                        <Button 
+                          size="sm" 
+                          onClick={() => handleAssignTender(tender)} 
+                          data-testid={`button-assign-${tender.id}`}
+                          className="shrink-0"
+                        >
+                          <UserPlus className="w-3 h-3 mr-1" />
+                          Assign
+                        </Button>
                       </div>
-                      <Button size="sm" onClick={() => handleAssignTender(tender)} data-testid={`button-assign-${tender.id}`}>Assign</Button>
-                    </div>
+                    </Card>
                   ))}
                 </div>
               </CardContent>
@@ -415,90 +444,154 @@ export default function AssignmentsHub() {
                   </TabsList>
                 </Tabs>
 
-                <div className="flex gap-2">
-                  <div className="relative flex-1 max-w-xs">
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <div className="relative flex-1 max-w-md">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input placeholder="Search by title..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 h-9" data-testid="input-search-assignments" />
+                    <Input 
+                      placeholder="Search by title or ID..." 
+                      value={searchQuery} 
+                      onChange={(e) => setSearchQuery(e.target.value)} 
+                      className="pl-9 h-9" 
+                      data-testid="input-search-assignments" 
+                    />
                   </div>
-                  <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-                    <SelectTrigger className="w-28 h-9" data-testid="filter-priority">
-                      <SelectValue placeholder="Priority" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All</SelectItem>
-                      <SelectItem value="urgent">Urgent</SelectItem>
-                      <SelectItem value="high">High</SelectItem>
-                      <SelectItem value="normal">Normal</SelectItem>
-                      <SelectItem value="low">Low</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
-                    <SelectTrigger className="w-32 h-9" data-testid="filter-assignee">
-                      <SelectValue placeholder="Assignee" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All</SelectItem>
-                      {teamMembers.filter(m => m.isActive).map(member => (
-                        <SelectItem key={member.id} value={member.id.toString()}>{member.fullName}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button size="sm" variant="outline" onClick={() => refetch()} data-testid="button-refresh"><RefreshCw className="w-4 h-4" /></Button>
+                  <div className="flex gap-2">
+                    <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+                      <SelectTrigger className="w-32 h-9" data-testid="filter-priority">
+                        <Filter className="w-3 h-3 mr-1" />
+                        <SelectValue placeholder="Priority" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Priority</SelectItem>
+                        <SelectItem value="urgent">Urgent</SelectItem>
+                        <SelectItem value="high">High</SelectItem>
+                        <SelectItem value="normal">Normal</SelectItem>
+                        <SelectItem value="low">Low</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
+                      <SelectTrigger className="w-36 h-9" data-testid="filter-assignee">
+                        <User className="w-3 h-3 mr-1" />
+                        <SelectValue placeholder="Assignee" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Members</SelectItem>
+                        {teamMembers.filter(m => m.isActive).map(member => (
+                          <SelectItem key={member.id} value={member.id.toString()}>{member.fullName}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button size="sm" variant="outline" onClick={() => refetch()} data-testid="button-refresh">
+                      <RefreshCw className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
               </div>
             </CardHeader>
             <CardContent>
               {filteredAssignments.length === 0 ? (
-                <div className="py-12 text-center text-muted-foreground">
-                  <ClipboardList className="w-8 h-8 mx-auto mb-3 opacity-30" />
-                  <p className="font-medium">{searchQuery ? "No matches found" : "No assignments"}</p>
+                <div className="py-16 text-center text-muted-foreground">
+                  <ClipboardList className="w-12 h-12 mx-auto mb-4 opacity-30" />
+                  <p className="font-medium text-lg mb-2">{searchQuery ? "No matches found" : "No assignments yet"}</p>
+                  <p className="text-sm">{searchQuery ? "Try adjusting your search or filters" : "Assignments will appear here once tenders are assigned to team members"}</p>
                 </div>
               ) : (
-                <Table className="text-sm">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-16">ID</TableHead>
-                      <TableHead>Tender</TableHead>
-                      <TableHead className="w-24">Assignee</TableHead>
-                      <TableHead className="w-24">Stage</TableHead>
-                      <TableHead className="w-16">Priority</TableHead>
-                      <TableHead className="w-20">Value</TableHead>
-                      <TableHead className="w-24">Deadline</TableHead>
-                      <TableHead className="w-16 text-right">Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredAssignments.map((assignment) => {
-                      const nextStage = getNextStage(assignment.currentStage || "assigned");
-                      const config = stageConfig[assignment.currentStage || "assigned"];
-                      const prioConfig = priorityConfig[assignment.priority || "normal"];
-                      const deadline = assignment.tender?.submissionDeadline;
-                      const isOverdue = deadline && isPast(new Date(deadline));
+                <div className="space-y-3">
+                  {filteredAssignments.map((assignment) => {
+                    const nextStage = getNextStage(assignment.currentStage || "assigned");
+                    const config = stageConfig[assignment.currentStage || "assigned"];
+                    const prioConfig = priorityConfig[assignment.priority || "normal"];
+                    const deadline = assignment.tender?.submissionDeadline;
+                    const isOverdue = deadline && isPast(new Date(deadline));
 
-                      return (
-                        <TableRow key={assignment.id} data-testid={`row-assignment-${assignment.id}`}>
-                          <TableCell className="font-mono text-xs">{assignment.tender?.t247Id || "-"}</TableCell>
-                          <TableCell className="max-w-xs"><span className="truncate block">{assignment.tender?.title || "Unknown"}</span></TableCell>
-                          <TableCell className="text-xs">{assignment.assignee?.fullName || "-"}</TableCell>
-                          <TableCell><Badge variant="outline" className="text-xs">{config?.label}</Badge></TableCell>
-                          <TableCell><Badge variant="outline" className="text-xs">{prioConfig?.label}</Badge></TableCell>
-                          <TableCell className="text-xs">{formatLakhs(assignment.tender?.estimatedValue)}</TableCell>
-                          <TableCell className={`text-xs ${isOverdue ? "text-red-600 font-medium" : ""}`}>
-                            {deadline ? format(new Date(deadline), "dd MMM") : "-"}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {nextStage && assignment.currentStage !== "submitted" && (
-                              <Button size="xs" variant="ghost" onClick={() => handleQuickStageUpdate(assignment, nextStage)} data-testid={`button-next-stage-${assignment.id}`}>
-                                <ArrowRight className="w-3 h-3" />
-                              </Button>
-                            )}
-                            {assignment.currentStage === "submitted" && <Badge variant="outline" className="text-xs">Done</Badge>}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+                    return (
+                      <Card key={assignment.id} className="p-4 hover:shadow-md transition-shadow" data-testid={`card-assignment-${assignment.id}`}>
+                        <div className="space-y-3">
+                          {/* Header Row */}
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <Badge variant="secondary" className="text-xs font-mono">
+                                  {assignment.tender?.t247Id || "-"}
+                                </Badge>
+                                <Badge 
+                                  variant="outline" 
+                                  className={`text-xs ${prioConfig?.color}`}
+                                >
+                                  {prioConfig?.label}
+                                </Badge>
+                                {isOverdue && (
+                                  <Badge variant="destructive" className="text-xs">
+                                    <AlertCircle className="w-3 h-3 mr-1" />
+                                    Overdue
+                                  </Badge>
+                                )}
+                              </div>
+                              <h3 className="font-medium text-sm leading-tight mb-2">
+                                {assignment.tender?.title || "Unknown Tender"}
+                              </h3>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {nextStage && assignment.currentStage !== "submitted" && (
+                                <Button 
+                                  size="sm" 
+                                  variant="outline"
+                                  onClick={() => handleQuickStageUpdate(assignment, nextStage)} 
+                                  data-testid={`button-next-stage-${assignment.id}`}
+                                  className="h-8 px-3"
+                                >
+                                  <ArrowRight className="w-3 h-3 mr-1" />
+                                  {stageConfig[nextStage]?.label}
+                                </Button>
+                              )}
+                              {assignment.currentStage === "submitted" && (
+                                <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
+                                  <CheckCircle className="w-3 h-3 mr-1" />
+                                  Completed
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Details Row */}
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs text-muted-foreground">
+                            <div className="flex items-center gap-1">
+                              <User className="w-3 h-3" />
+                              <span className="truncate">{assignment.assignee?.fullName || "Unassigned"}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Flag className="w-3 h-3" />
+                              <Badge 
+                                variant="outline" 
+                                className={`text-xs ${config?.color} ${config?.bgColor}`}
+                              >
+                                {config?.label}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <IndianRupee className="w-3 h-3" />
+                              <span>{formatLakhs(assignment.tender?.estimatedValue)}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Calendar className="w-3 h-3" />
+                              <span className={isOverdue ? "text-red-600 font-medium" : ""}>
+                                {deadline ? format(new Date(deadline), "dd MMM yyyy") : "No deadline"}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Department/Organization */}
+                          {assignment.tender?.department && (
+                            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                              <Building2 className="w-3 h-3" />
+                              <span className="truncate">{assignment.tender.department}</span>
+                            </div>
+                          )}
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
               )}
             </CardContent>
           </Card>
