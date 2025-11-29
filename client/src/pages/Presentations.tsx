@@ -413,8 +413,8 @@ export default function PresentationsPage() {
                         <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-full p-0" align="start">
-                      <Command>
+                    <PopoverContent className="w-[400px] p-0" align="start">
+                      <Command shouldFilter={false}>
                         <CommandInput 
                           placeholder="Search by Tender ID or title..." 
                           value={referenceSearchQuery}
@@ -422,39 +422,51 @@ export default function PresentationsPage() {
                           data-testid="input-search-tender"
                         />
                         <CommandList>
-                          <CommandEmpty>
-                            {isSearching ? "Searching..." : "No tenders found."}
-                          </CommandEmpty>
-                          <CommandGroup>
-                            {tenderReferences?.map((ref) => (
-                              <CommandItem
-                                key={ref.referenceId}
-                                value={ref.referenceId}
-                                onSelect={() => {
-                                  setFormData(prev => ({
-                                    ...prev,
-                                    referenceId: ref.referenceId,
-                                    tenderId: ref.tenderId || null,
-                                  }));
-                                  setReferenceSearchOpen(false);
-                                }}
-                              >
-                                <Check
-                                  className={`mr-2 h-4 w-4 ${
-                                    formData.referenceId === ref.referenceId ? "opacity-100" : "opacity-0"
-                                  }`}
-                                />
-                                <div className="flex flex-col">
-                                  <span className="font-medium">{ref.referenceId}</span>
-                                  {ref.title && (
-                                    <span className="text-xs text-muted-foreground line-clamp-1">
-                                      {ref.title}
-                                    </span>
-                                  )}
-                                </div>
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
+                          {referenceSearchQuery.length < 2 ? (
+                            <CommandEmpty>Type at least 2 characters to search...</CommandEmpty>
+                          ) : isSearching ? (
+                            <CommandEmpty>
+                              <div className="flex items-center gap-2">
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <span>Searching...</span>
+                              </div>
+                            </CommandEmpty>
+                          ) : !tenderReferences || tenderReferences.length === 0 ? (
+                            <CommandEmpty>No matching tenders found.</CommandEmpty>
+                          ) : (
+                            <CommandGroup heading="Matching Tenders">
+                              {tenderReferences.map((ref) => (
+                                <CommandItem
+                                  key={ref.referenceId}
+                                  value={ref.referenceId}
+                                  onSelect={() => {
+                                    setFormData(prev => ({
+                                      ...prev,
+                                      referenceId: ref.referenceId,
+                                      tenderId: ref.tenderId || null,
+                                    }));
+                                    setReferenceSearchQuery("");
+                                    setReferenceSearchOpen(false);
+                                  }}
+                                  className="cursor-pointer"
+                                >
+                                  <Check
+                                    className={`mr-2 h-4 w-4 ${
+                                      formData.referenceId === ref.referenceId ? "opacity-100" : "opacity-0"
+                                    }`}
+                                  />
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-medium text-sm">{ref.referenceId}</p>
+                                    {ref.title && (
+                                      <p className="text-xs text-muted-foreground truncate">
+                                        {ref.title}
+                                      </p>
+                                    )}
+                                  </div>
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          )}
                         </CommandList>
                       </Command>
                     </PopoverContent>
