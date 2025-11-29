@@ -651,6 +651,13 @@ export default function Settings() {
             </div>
           </CardContent>
         </Card>
+        
+        {/* Disclaimer */}
+        <div className="mt-8 pt-6 border-t border-border">
+          <p className="text-sm text-muted-foreground text-center">
+            This software is effective from 01 December 2025. Data prior to this date is not available.
+          </p>
+        </div>
       </div>
 
       <AlertDialog open={keywordToDelete !== null} onOpenChange={() => setKeywordToDelete(null)}>
