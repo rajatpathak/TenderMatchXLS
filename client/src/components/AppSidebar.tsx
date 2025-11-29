@@ -1,5 +1,6 @@
 import { useLocation, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
 import {
   Sidebar,
   SidebarContent,
@@ -36,6 +37,7 @@ import {
   ClipboardList,
   Briefcase,
   Shield,
+  Calendar,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest } from "@/lib/queryClient";
@@ -64,6 +66,27 @@ export function AppSidebar() {
   const [location] = useLocation();
   const { user } = useAuth();
   const { progress, isRunning } = useReanalyzeProgress();
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const formatTime = (date: Date) => {
+    return date.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+  };
+
+  const formatDate = (date: Date) => {
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric'
+    });
+  };
 
   const { data: stats } = useQuery<Stats>({
     queryKey: ['/api/stats'],
@@ -205,6 +228,22 @@ export function AppSidebar() {
           <span className="text-lg font-semibold text-sidebar-foreground">TenderMatch</span>
         </div>
         
+        <div className="mt-3 p-2 rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border border-blue-100 dark:border-blue-800/30">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+              <span className="text-xs font-medium text-blue-700 dark:text-blue-300">
+                {formatDate(currentTime)}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              <span className="text-xs font-mono font-semibold text-indigo-700 dark:text-indigo-300">
+                {formatTime(currentTime)}
+              </span>
+            </div>
+          </div>
+        </div>
         {isRunning && (
           <div className="mt-3 p-2 rounded-md bg-sidebar-accent/50">
             <div className="flex items-center gap-2 text-xs text-sidebar-foreground">
