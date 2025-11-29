@@ -266,7 +266,7 @@ function AddResultDialog({
         </DialogHeader>
         <div className="space-y-4 py-4">
           <div className="space-y-2">
-            <Label>Reference ID</Label>
+            <Label>Tender ID</Label>
             <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
               <PopoverTrigger asChild>
                 <Button
@@ -279,7 +279,7 @@ function AddResultDialog({
                   {selectedReference ? (
                     <span className="truncate">{selectedReference.referenceId}</span>
                   ) : (
-                    <span className="text-muted-foreground">Search and select a Reference ID...</span>
+                    <span className="text-muted-foreground">Search and select a Tender ID...</span>
                   )}
                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
@@ -287,7 +287,7 @@ function AddResultDialog({
               <PopoverContent className="w-[400px] p-0" align="start">
                 <Command shouldFilter={false}>
                   <CommandInput 
-                    placeholder="Type to search Reference IDs..." 
+                    placeholder="Type to search Tender IDs..." 
                     value={searchQuery}
                     onValueChange={setSearchQuery}
                     data-testid="input-search-reference"
