@@ -200,6 +200,52 @@ export interface IStorage {
   
   // Unified tender activity overview
   getTenderActivityOverview(referenceId: string): Promise<TenderActivityOverview | undefined>;
+  
+  // MIS Report operations
+  getMISReportForTeamMember(teamMemberId: number, startDate: Date, endDate: Date): Promise<{
+    teamMember: TeamMember;
+    summary: {
+      tendersMarkedNotRelevant: number;
+      tendersMarkedNotEligible: number;
+      tendersAssigned: number;
+      tendersSubmitted: number;
+      tendersReviewed: number;
+      clarificationsCreated: number;
+      clarificationsSubmitted: number;
+      presentationsScheduled: number;
+      presentationsCompleted: number;
+      resultsRecorded: number;
+    };
+    dailyBreakdown: {
+      date: string;
+      notRelevant: number;
+      notEligible: number;
+      assigned: number;
+      submitted: number;
+      reviewed: number;
+      clarifications: number;
+      presentations: number;
+    }[];
+  }>;
+  
+  getMISReportForAllTeamMembers(startDate: Date, endDate: Date): Promise<{
+    teamMemberId: number;
+    teamMemberName: string;
+    role: string;
+    summary: {
+      tendersMarkedNotRelevant: number;
+      tendersMarkedNotEligible: number;
+      tendersAssigned: number;
+      tendersSubmitted: number;
+      tendersReviewed: number;
+      clarificationsCreated: number;
+      clarificationsSubmitted: number;
+      presentationsScheduled: number;
+      presentationsCompleted: number;
+      resultsRecorded: number;
+      totalActions: number;
+    };
+  }[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1494,6 +1540,248 @@ export class DatabaseStorage implements IStorage {
       clarifications: relatedClarifications,
       submissions,
     };
+  }
+
+  // ===============================
+  // MIS REPORT OPERATIONS
+  // ===============================
+  
+  async getMISReportForTeamMember(teamMemberId: number, startDate: Date, endDate: Date): Promise<{
+    teamMember: TeamMember;
+    summary: {
+      tendersMarkedNotRelevant: number;
+      tendersMarkedNotEligible: number;
+      tendersAssigned: number;
+      tendersSubmitted: number;
+      tendersReviewed: number;
+      clarificationsCreated: number;
+      clarificationsSubmitted: number;
+      presentationsScheduled: number;
+      presentationsCompleted: number;
+      resultsRecorded: number;
+    };
+    dailyBreakdown: {
+      date: string;
+      notRelevant: number;
+      notEligible: number;
+      assigned: number;
+      submitted: number;
+      reviewed: number;
+      clarifications: number;
+      presentations: number;
+    }[];
+  }> {
+    const [teamMember] = await db.select().from(teamMembers).where(eq(teamMembers.id, teamMemberId));
+    if (!teamMember) {
+      throw new Error('Team member not found');
+    }
+
+    // Get all audit logs for this user within date range
+    const logs = await db
+      .select()
+      .from(auditLogs)
+      .where(and(
+        eq(auditLogs.userName, teamMember.username),
+        gte(auditLogs.createdAt, startDate),
+        lt(auditLogs.createdAt, endDate)
+      ));
+
+    // Count activities by category/action
+    const notRelevantCount = logs.filter(l => l.action === 'override' && l.details?.includes('not_relevant')).length;
+    const notEligibleCount = logs.filter(l => l.action === 'override' && l.details?.includes('not_eligible')).length;
+    
+    // Get assignments created by or assigned to this user
+    const assignmentLogs = logs.filter(l => l.action === 'create' && l.category === 'assignment');
+    
+    // Get submissions
+    const submissionLogs = logs.filter(l => l.action === 'submit' || (l.action === 'stage_change' && l.details?.includes('submitted')));
+    
+    // Get reviews (stage changes to ready_for_review or approval actions)
+    const reviewLogs = logs.filter(l => l.action === 'review' || (l.action === 'stage_change' && l.details?.includes('ready_for_review')));
+    
+    // Get clarifications created by this user
+    const clarificationCreateLogs = logs.filter(l => l.action === 'create' && l.category === 'clarification');
+    const clarificationSubmitLogs = logs.filter(l => l.action === 'submit' && l.category === 'clarification');
+    
+    // Get presentations created/scheduled by this user
+    const presentationScheduledLogs = logs.filter(l => l.action === 'create' && l.category === 'presentation');
+    const presentationCompletedLogs = logs.filter(l => l.action === 'status_change' && l.category === 'presentation' && l.details?.includes('completed'));
+    
+    // Get results recorded
+    const resultsLogs = logs.filter(l => l.action === 'create' && l.category === 'tender_result');
+
+    // Also get direct counts from tables
+    const assignmentsAssigned = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(tenderAssignments)
+      .where(and(
+        eq(tenderAssignments.assignedTo, teamMemberId),
+        gte(tenderAssignments.assignedAt, startDate),
+        lt(tenderAssignments.assignedAt, endDate)
+      ));
+    
+    const submissionsCount = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(biddingSubmissions)
+      .where(and(
+        eq(biddingSubmissions.submittedBy, teamMemberId),
+        gte(biddingSubmissions.submittedAt, startDate),
+        lt(biddingSubmissions.submittedAt, endDate)
+      ));
+
+    const clarificationsCreatedCount = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(clarifications)
+      .where(and(
+        eq(clarifications.createdBy, teamMemberId),
+        gte(clarifications.createdAt, startDate),
+        lt(clarifications.createdAt, endDate)
+      ));
+    
+    const presentationsCreatedCount = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(presentations)
+      .where(and(
+        eq(presentations.createdBy, teamMemberId),
+        gte(presentations.createdAt, startDate),
+        lt(presentations.createdAt, endDate)
+      ));
+    
+    const resultsCreatedCount = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(tenderResults)
+      .where(and(
+        eq(tenderResults.updatedBy, teamMemberId),
+        gte(tenderResults.createdAt, startDate),
+        lt(tenderResults.createdAt, endDate)
+      ));
+
+    // Build daily breakdown
+    const dailyBreakdown: {
+      date: string;
+      notRelevant: number;
+      notEligible: number;
+      assigned: number;
+      submitted: number;
+      reviewed: number;
+      clarifications: number;
+      presentations: number;
+    }[] = [];
+
+    // Generate dates in range
+    const currentDate = new Date(startDate);
+    while (currentDate < endDate) {
+      const dateStr = currentDate.toISOString().split('T')[0];
+      const nextDate = new Date(currentDate);
+      nextDate.setDate(nextDate.getDate() + 1);
+
+      const dayLogs = logs.filter(l => {
+        const logDate = new Date(l.createdAt!);
+        return logDate >= currentDate && logDate < nextDate;
+      });
+
+      dailyBreakdown.push({
+        date: dateStr,
+        notRelevant: dayLogs.filter(l => l.action === 'override' && l.details?.includes('not_relevant')).length,
+        notEligible: dayLogs.filter(l => l.action === 'override' && l.details?.includes('not_eligible')).length,
+        assigned: dayLogs.filter(l => l.action === 'create' && l.category === 'assignment').length,
+        submitted: dayLogs.filter(l => l.action === 'submit' || (l.action === 'stage_change' && l.details?.includes('submitted'))).length,
+        reviewed: dayLogs.filter(l => l.action === 'review' || (l.action === 'stage_change' && l.details?.includes('ready_for_review'))).length,
+        clarifications: dayLogs.filter(l => l.category === 'clarification').length,
+        presentations: dayLogs.filter(l => l.category === 'presentation').length,
+      });
+
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    return {
+      teamMember,
+      summary: {
+        tendersMarkedNotRelevant: notRelevantCount,
+        tendersMarkedNotEligible: notEligibleCount,
+        tendersAssigned: Number(assignmentsAssigned[0]?.count || 0),
+        tendersSubmitted: Number(submissionsCount[0]?.count || 0),
+        tendersReviewed: reviewLogs.length,
+        clarificationsCreated: Number(clarificationsCreatedCount[0]?.count || 0),
+        clarificationsSubmitted: clarificationSubmitLogs.length,
+        presentationsScheduled: Number(presentationsCreatedCount[0]?.count || 0),
+        presentationsCompleted: presentationCompletedLogs.length,
+        resultsRecorded: Number(resultsCreatedCount[0]?.count || 0),
+      },
+      dailyBreakdown,
+    };
+  }
+
+  async getMISReportForAllTeamMembers(startDate: Date, endDate: Date): Promise<{
+    teamMemberId: number;
+    teamMemberName: string;
+    role: string;
+    summary: {
+      tendersMarkedNotRelevant: number;
+      tendersMarkedNotEligible: number;
+      tendersAssigned: number;
+      tendersSubmitted: number;
+      tendersReviewed: number;
+      clarificationsCreated: number;
+      clarificationsSubmitted: number;
+      presentationsScheduled: number;
+      presentationsCompleted: number;
+      resultsRecorded: number;
+      totalActions: number;
+    };
+  }[]> {
+    const allMembers = await db.select().from(teamMembers).where(eq(teamMembers.isActive, true));
+    
+    const reports = await Promise.all(
+      allMembers.map(async (member) => {
+        try {
+          const report = await this.getMISReportForTeamMember(member.id, startDate, endDate);
+          const total = 
+            report.summary.tendersMarkedNotRelevant +
+            report.summary.tendersMarkedNotEligible +
+            report.summary.tendersAssigned +
+            report.summary.tendersSubmitted +
+            report.summary.tendersReviewed +
+            report.summary.clarificationsCreated +
+            report.summary.clarificationsSubmitted +
+            report.summary.presentationsScheduled +
+            report.summary.presentationsCompleted +
+            report.summary.resultsRecorded;
+
+          return {
+            teamMemberId: member.id,
+            teamMemberName: member.fullName || member.username,
+            role: member.role,
+            summary: {
+              ...report.summary,
+              totalActions: total,
+            },
+          };
+        } catch (e) {
+          return {
+            teamMemberId: member.id,
+            teamMemberName: member.fullName || member.username,
+            role: member.role,
+            summary: {
+              tendersMarkedNotRelevant: 0,
+              tendersMarkedNotEligible: 0,
+              tendersAssigned: 0,
+              tendersSubmitted: 0,
+              tendersReviewed: 0,
+              clarificationsCreated: 0,
+              clarificationsSubmitted: 0,
+              presentationsScheduled: 0,
+              presentationsCompleted: 0,
+              resultsRecorded: 0,
+              totalActions: 0,
+            },
+          };
+        }
+      })
+    );
+
+    // Sort by total actions descending
+    return reports.sort((a, b) => b.summary.totalActions - a.summary.totalActions);
   }
 }
 

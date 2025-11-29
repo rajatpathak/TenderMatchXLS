@@ -26,6 +26,7 @@ import AuditLogs from "@/pages/AuditLogs";
 import TenderResults from "@/pages/TenderResults";
 import Presentations from "@/pages/Presentations";
 import Clarifications from "@/pages/Clarifications";
+import MISReports from "@/pages/MISReports";
 import { 
   EligibleTendersPage, 
   NotRelevantTendersPage, 
@@ -141,6 +142,7 @@ function Router() {
         <Route path="/tender-results" component={TenderResults} />
         <Route path="/presentations" component={Presentations} />
         <Route path="/clarifications" component={Clarifications} />
+        <Route path="/mis-reports" component={MISReports} />
         <Route path="/team" component={TeamManagement} />
         <Route path="/audit-logs" component={AuditLogs} />
         <Route path="/settings" component={Settings} />

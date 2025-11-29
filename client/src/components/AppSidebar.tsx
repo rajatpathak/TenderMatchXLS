@@ -41,6 +41,7 @@ import {
   Trophy,
   Presentation,
   HelpCircle,
+  BarChart3,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest } from "@/lib/queryClient";
@@ -225,6 +226,14 @@ export function AppSidebar() {
       badge: undefined,
       color: "text-amber-500",
       description: "Manage team members",
+    },
+    {
+      title: "MIS Reports",
+      url: "/mis-reports",
+      icon: BarChart3,
+      badge: undefined,
+      color: "text-teal-500",
+      description: "Activity analytics",
     },
   ];
 

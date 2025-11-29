@@ -68,6 +68,13 @@ TenderMatch is a web application for analyzing government tender eligibility wit
    - Continuous scrolling animation for multiple notifications
    - Auto-pause on hover for reading
    - Quick link to view all notifications
+19. **MIS Reports**: Management Information System reports with:
+   - Date range selection (Today, Yesterday, Last 7 Days, This Week, Last 30 Days, This Month, Custom)
+   - Team member activity tracking (tenders marked, assignments, submissions, reviews)
+   - Clarifications and presentations tracking
+   - Daily breakdown charts and tables
+   - Team comparison view (admin/manager only)
+   - CSV download for individual and team reports
 
 ## Workflow Stages
 Tenders progress through the following stages after assignment:
@@ -174,6 +181,13 @@ Tenders progress through the following stages after assignment:
 - `PATCH /api/clarifications/:id/stage` - Update clarification stage
 - `POST /api/clarifications/:id/submit` - Submit clarification with file upload
 - `GET /api/clarifications/:id/history` - Get clarification history
+
+### MIS Reports
+- `GET /api/mis-report/me` - Get MIS report for current user
+- `GET /api/mis-report/team-member/:id` - Get MIS report for specific team member
+- `GET /api/mis-report/all` - Get MIS reports for all team members (admin/manager only)
+- `GET /api/mis-report/download/me` - Download personal MIS report as CSV
+- `GET /api/mis-report/download/all` - Download team MIS report as CSV (admin/manager only)
 
 ### Configuration
 - `GET /api/company-criteria` - Get criteria

@@ -2570,6 +2570,169 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ===============================
+  // MIS REPORTS
+  // ===============================
+
+  // Get MIS report for a specific team member
+  app.get('/api/mis-report/team-member/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      const teamMemberId = parseInt(req.params.id);
+      
+      // Non-admins can only view their own report
+      if (user.role !== 'admin' && user.role !== 'manager' && user.teamMemberId !== teamMemberId) {
+        return res.status(403).json({ message: "You can only view your own report" });
+      }
+      
+      // Parse date range from query params (default to last 7 days)
+      const endDate = req.query.endDate ? new Date(req.query.endDate) : new Date();
+      const startDate = req.query.startDate 
+        ? new Date(req.query.startDate)
+        : new Date(endDate.getTime() - 7 * 24 * 60 * 60 * 1000);
+      
+      // Set end date to end of day
+      endDate.setHours(23, 59, 59, 999);
+      
+      const report = await storage.getMISReportForTeamMember(teamMemberId, startDate, endDate);
+      res.json(report);
+    } catch (error) {
+      console.error("Error fetching MIS report:", error);
+      res.status(500).json({ message: "Failed to fetch MIS report" });
+    }
+  });
+
+  // Get MIS report for current user (my report)
+  app.get('/api/mis-report/me', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      
+      if (!user.teamMemberId) {
+        return res.status(400).json({ message: "No team member associated with this user" });
+      }
+      
+      // Parse date range from query params (default to last 7 days)
+      const endDate = req.query.endDate ? new Date(req.query.endDate) : new Date();
+      const startDate = req.query.startDate 
+        ? new Date(req.query.startDate)
+        : new Date(endDate.getTime() - 7 * 24 * 60 * 60 * 1000);
+      
+      // Set end date to end of day
+      endDate.setHours(23, 59, 59, 999);
+      
+      const report = await storage.getMISReportForTeamMember(user.teamMemberId, startDate, endDate);
+      res.json(report);
+    } catch (error) {
+      console.error("Error fetching my MIS report:", error);
+      res.status(500).json({ message: "Failed to fetch MIS report" });
+    }
+  });
+
+  // Get MIS report for all team members (admin/manager only)
+  app.get('/api/mis-report/all', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      
+      if (user.role !== 'admin' && user.role !== 'manager') {
+        return res.status(403).json({ message: "Only admins and managers can view all team reports" });
+      }
+      
+      // Parse date range from query params (default to last 7 days)
+      const endDate = req.query.endDate ? new Date(req.query.endDate) : new Date();
+      const startDate = req.query.startDate 
+        ? new Date(req.query.startDate)
+        : new Date(endDate.getTime() - 7 * 24 * 60 * 60 * 1000);
+      
+      // Set end date to end of day
+      endDate.setHours(23, 59, 59, 999);
+      
+      const reports = await storage.getMISReportForAllTeamMembers(startDate, endDate);
+      res.json(reports);
+    } catch (error) {
+      console.error("Error fetching all team MIS reports:", error);
+      res.status(500).json({ message: "Failed to fetch team MIS reports" });
+    }
+  });
+
+  // Download MIS report as CSV
+  app.get('/api/mis-report/download/:type', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      const type = req.params.type; // 'me' or 'all'
+      
+      // Parse date range from query params (default to last 7 days)
+      const endDate = req.query.endDate ? new Date(req.query.endDate) : new Date();
+      const startDate = req.query.startDate 
+        ? new Date(req.query.startDate)
+        : new Date(endDate.getTime() - 7 * 24 * 60 * 60 * 1000);
+      
+      // Set end date to end of day
+      endDate.setHours(23, 59, 59, 999);
+      
+      let csvContent = '';
+      let filename = '';
+      
+      if (type === 'me') {
+        if (!user.teamMemberId) {
+          return res.status(400).json({ message: "No team member associated with this user" });
+        }
+        
+        const report = await storage.getMISReportForTeamMember(user.teamMemberId, startDate, endDate);
+        
+        // Generate CSV for individual report
+        csvContent = 'MIS Report - ' + report.teamMember.fullName + '\n';
+        csvContent += 'Period: ' + startDate.toISOString().split('T')[0] + ' to ' + endDate.toISOString().split('T')[0] + '\n\n';
+        
+        csvContent += 'Summary\n';
+        csvContent += 'Metric,Count\n';
+        csvContent += 'Tenders Marked Not Relevant,' + report.summary.tendersMarkedNotRelevant + '\n';
+        csvContent += 'Tenders Marked Not Eligible,' + report.summary.tendersMarkedNotEligible + '\n';
+        csvContent += 'Tenders Assigned,' + report.summary.tendersAssigned + '\n';
+        csvContent += 'Tenders Submitted,' + report.summary.tendersSubmitted + '\n';
+        csvContent += 'Tenders Reviewed,' + report.summary.tendersReviewed + '\n';
+        csvContent += 'Clarifications Created,' + report.summary.clarificationsCreated + '\n';
+        csvContent += 'Clarifications Submitted,' + report.summary.clarificationsSubmitted + '\n';
+        csvContent += 'Presentations Scheduled,' + report.summary.presentationsScheduled + '\n';
+        csvContent += 'Presentations Completed,' + report.summary.presentationsCompleted + '\n';
+        csvContent += 'Results Recorded,' + report.summary.resultsRecorded + '\n\n';
+        
+        csvContent += 'Daily Breakdown\n';
+        csvContent += 'Date,Not Relevant,Not Eligible,Assigned,Submitted,Reviewed,Clarifications,Presentations\n';
+        report.dailyBreakdown.forEach(day => {
+          csvContent += `${day.date},${day.notRelevant},${day.notEligible},${day.assigned},${day.submitted},${day.reviewed},${day.clarifications},${day.presentations}\n`;
+        });
+        
+        filename = `MIS_Report_${report.teamMember.username}_${startDate.toISOString().split('T')[0]}_${endDate.toISOString().split('T')[0]}.csv`;
+      } else if (type === 'all') {
+        if (user.role !== 'admin' && user.role !== 'manager') {
+          return res.status(403).json({ message: "Only admins and managers can download team reports" });
+        }
+        
+        const reports = await storage.getMISReportForAllTeamMembers(startDate, endDate);
+        
+        // Generate CSV for all team members
+        csvContent = 'Team MIS Report\n';
+        csvContent += 'Period: ' + startDate.toISOString().split('T')[0] + ' to ' + endDate.toISOString().split('T')[0] + '\n\n';
+        
+        csvContent += 'Team Member,Role,Not Relevant,Not Eligible,Assigned,Submitted,Reviewed,Clarifications Created,Clarifications Submitted,Presentations Scheduled,Presentations Completed,Results Recorded,Total Actions\n';
+        reports.forEach(r => {
+          csvContent += `"${r.teamMemberName}",${r.role},${r.summary.tendersMarkedNotRelevant},${r.summary.tendersMarkedNotEligible},${r.summary.tendersAssigned},${r.summary.tendersSubmitted},${r.summary.tendersReviewed},${r.summary.clarificationsCreated},${r.summary.clarificationsSubmitted},${r.summary.presentationsScheduled},${r.summary.presentationsCompleted},${r.summary.resultsRecorded},${r.summary.totalActions}\n`;
+        });
+        
+        filename = `Team_MIS_Report_${startDate.toISOString().split('T')[0]}_${endDate.toISOString().split('T')[0]}.csv`;
+      } else {
+        return res.status(400).json({ message: "Invalid report type" });
+      }
+      
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.send(csvContent);
+    } catch (error) {
+      console.error("Error downloading MIS report:", error);
+      res.status(500).json({ message: "Failed to download MIS report" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
