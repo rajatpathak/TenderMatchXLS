@@ -1971,6 +1971,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // PRESENTATION ROUTES
   // ===============================
 
+  // Get today's presentations for the current user (for notifications)
+  // Note: This route MUST be before /:id route to avoid "today" being captured as an ID
+  app.get('/api/presentations/today', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      
+      // Check if user is an admin (either from session role or team member role)
+      const isSessionAdmin = user.role === 'admin';
+      
+      // Get the team member record for the current user
+      const teamMember = await storage.getTeamMemberByUsername(user.id);
+      
+      // Determine if user is admin and their team member ID
+      const isAdmin = isSessionAdmin || (teamMember?.role === 'admin');
+      const teamMemberId = teamMember?.id ?? 0;
+      
+      // Admins get all today's presentations, non-admins get only assigned ones
+      const presentations = await storage.getTodaysPresentationsForUser(teamMemberId, isAdmin);
+      
+      res.json(presentations);
+    } catch (error) {
+      console.error("Error fetching today's presentations:", error);
+      res.status(500).json({ message: "Failed to fetch today's presentations" });
+    }
+  });
+
   // Get all presentations
   app.get('/api/presentations', isAuthenticated, async (req, res) => {
     try {

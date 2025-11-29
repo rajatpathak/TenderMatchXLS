@@ -59,7 +59,7 @@ import {
   type TenderActivityOverview,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, or, sql } from "drizzle-orm";
+import { eq, desc, and, or, sql, gte, lt } from "drizzle-orm";
 
 export interface IStorage {
   // User operations
@@ -186,6 +186,7 @@ export interface IStorage {
   updatePresentationStatus(id: number, status: string, changedBy: number, note?: string): Promise<Presentation | undefined>;
   uploadPresentationFile(id: number, filePath: string, changedBy: number): Promise<Presentation | undefined>;
   deletePresentation(id: number): Promise<void>;
+  getTodaysPresentationsForUser(userId: number, isAdmin: boolean): Promise<PresentationWithDetails[]>;
   
   // Clarification operations
   getClarifications(): Promise<ClarificationWithDetails[]>;
@@ -1233,6 +1234,33 @@ export class DatabaseStorage implements IStorage {
   async deletePresentation(id: number): Promise<void> {
     await db.delete(presentationHistory).where(eq(presentationHistory.presentationId, id));
     await db.delete(presentations).where(eq(presentations.id, id));
+  }
+
+  async getTodaysPresentationsForUser(userId: number, isAdmin: boolean): Promise<PresentationWithDetails[]> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    // Get all presentations scheduled for today
+    const results = await db
+      .select()
+      .from(presentations)
+      .where(
+        and(
+          gte(presentations.scheduledDate, today),
+          lt(presentations.scheduledDate, tomorrow),
+          eq(presentations.status, 'scheduled')
+        )
+      )
+      .orderBy(presentations.scheduledTime);
+    
+    // Filter by user access: admin sees all, regular users see only their assigned ones
+    const filteredResults = isAdmin 
+      ? results 
+      : results.filter(p => p.assignedTo === userId);
+    
+    return Promise.all(filteredResults.map(async (p) => this.enrichPresentation(p)));
   }
 
   // ===============================

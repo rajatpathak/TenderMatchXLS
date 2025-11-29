@@ -33,6 +33,7 @@ import {
   ManualReviewTendersPage,
   MissedTendersPage,
 } from "@/pages/TenderCategoryPage";
+import { NotificationBell } from "@/components/NotificationBell";
 
 function HeaderContent() {
   const { upload } = useUploadProgress();
@@ -70,7 +71,10 @@ function HeaderContent() {
           <span className="text-xs text-muted-foreground font-mono whitespace-nowrap">{upload.progress}%</span>
         </div>
       )}
-      <ThemeToggle />
+      <div className="flex items-center gap-2">
+        <NotificationBell />
+        <ThemeToggle />
+      </div>
     </div>
   );
 }
