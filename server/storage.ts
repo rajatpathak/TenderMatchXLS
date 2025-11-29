@@ -13,6 +13,10 @@ import {
   auditLogs,
   tenderResults,
   tenderResultHistory,
+  presentations,
+  presentationHistory,
+  clarifications,
+  clarificationHistory,
   type User,
   type UpsertUser,
   type Tender,
@@ -42,6 +46,17 @@ import {
   type TenderResultHistory,
   type InsertTenderResultHistory,
   type TenderResultWithHistory,
+  type Presentation,
+  type InsertPresentation,
+  type PresentationHistory,
+  type InsertPresentationHistory,
+  type PresentationWithDetails,
+  type Clarification,
+  type InsertClarification,
+  type ClarificationHistory,
+  type InsertClarificationHistory,
+  type ClarificationWithDetails,
+  type TenderActivityOverview,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, sql } from "drizzle-orm";
@@ -161,6 +176,28 @@ export interface IStorage {
   updateTenderResultStatus(id: number, status: string, updatedBy: number, note?: string): Promise<TenderResult | undefined>;
   getTenderResultHistory(tenderResultId: number): Promise<TenderResultHistory[]>;
   searchTenderReferences(query: string): Promise<{ referenceId: string; title?: string; tenderId?: number }[]>;
+  
+  // Presentation operations
+  getPresentations(): Promise<PresentationWithDetails[]>;
+  getPresentationById(id: number): Promise<PresentationWithDetails | undefined>;
+  getPresentationsByReferenceId(referenceId: string): Promise<PresentationWithDetails[]>;
+  createPresentation(presentation: InsertPresentation): Promise<Presentation>;
+  updatePresentation(id: number, presentation: Partial<InsertPresentation>): Promise<Presentation | undefined>;
+  updatePresentationStatus(id: number, status: string, changedBy: number, note?: string): Promise<Presentation | undefined>;
+  uploadPresentationFile(id: number, filePath: string, changedBy: number): Promise<Presentation | undefined>;
+  deletePresentation(id: number): Promise<void>;
+  
+  // Clarification operations
+  getClarifications(): Promise<ClarificationWithDetails[]>;
+  getClarificationById(id: number): Promise<ClarificationWithDetails | undefined>;
+  getClarificationsByReferenceId(referenceId: string): Promise<ClarificationWithDetails[]>;
+  createClarification(clarification: InsertClarification): Promise<Clarification>;
+  updateClarification(id: number, clarification: Partial<InsertClarification>): Promise<Clarification | undefined>;
+  updateClarificationStage(id: number, stage: string, changedBy: number, note?: string): Promise<Clarification | undefined>;
+  deleteClarification(id: number): Promise<void>;
+  
+  // Unified tender activity overview
+  getTenderActivityOverview(referenceId: string): Promise<TenderActivityOverview | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1056,6 +1093,348 @@ export class DatabaseStorage implements IStorage {
         tenderId: t.tenderId,
       };
     });
+  }
+
+  // ===============================
+  // PRESENTATION OPERATIONS
+  // ===============================
+  
+  async getPresentations(): Promise<PresentationWithDetails[]> {
+    const results = await db
+      .select()
+      .from(presentations)
+      .orderBy(desc(presentations.scheduledDate));
+    
+    return Promise.all(results.map(async (p) => this.enrichPresentation(p)));
+  }
+
+  async getPresentationById(id: number): Promise<PresentationWithDetails | undefined> {
+    const [result] = await db
+      .select()
+      .from(presentations)
+      .where(eq(presentations.id, id));
+    
+    if (!result) return undefined;
+    return this.enrichPresentation(result);
+  }
+
+  async getPresentationsByReferenceId(referenceId: string): Promise<PresentationWithDetails[]> {
+    const results = await db
+      .select()
+      .from(presentations)
+      .where(eq(presentations.referenceId, referenceId))
+      .orderBy(desc(presentations.scheduledDate));
+    
+    return Promise.all(results.map(async (p) => this.enrichPresentation(p)));
+  }
+
+  private async enrichPresentation(p: Presentation): Promise<PresentationWithDetails> {
+    const [assignee] = await db.select().from(teamMembers).where(eq(teamMembers.id, p.assignedTo));
+    const [creator] = await db.select().from(teamMembers).where(eq(teamMembers.id, p.createdBy));
+    
+    let tender: Tender | undefined;
+    if (p.tenderId) {
+      const [t] = await db.select().from(tenders).where(eq(tenders.id, p.tenderId));
+      tender = t;
+    }
+    
+    const history = await db
+      .select()
+      .from(presentationHistory)
+      .where(eq(presentationHistory.presentationId, p.id))
+      .orderBy(desc(presentationHistory.timestamp));
+    
+    const historyWithMembers = await Promise.all(
+      history.map(async (h) => {
+        const [member] = await db.select().from(teamMembers).where(eq(teamMembers.id, h.changedBy));
+        return { ...h, changedByMember: member };
+      })
+    );
+    
+    return {
+      ...p,
+      assignee,
+      creator,
+      tender,
+      history: historyWithMembers,
+    };
+  }
+
+  async createPresentation(presentation: InsertPresentation): Promise<Presentation> {
+    const [created] = await db.insert(presentations).values(presentation).returning();
+    
+    // Create initial history entry
+    await db.insert(presentationHistory).values({
+      presentationId: created.id,
+      action: 'created',
+      newStatus: 'scheduled',
+      changedBy: presentation.createdBy,
+    });
+    
+    return created;
+  }
+
+  async updatePresentation(id: number, presentation: Partial<InsertPresentation>): Promise<Presentation | undefined> {
+    const [updated] = await db
+      .update(presentations)
+      .set({ ...presentation, updatedAt: new Date() })
+      .where(eq(presentations.id, id))
+      .returning();
+    
+    return updated;
+  }
+
+  async updatePresentationStatus(id: number, status: string, changedBy: number, note?: string): Promise<Presentation | undefined> {
+    const [existing] = await db.select().from(presentations).where(eq(presentations.id, id));
+    if (!existing) return undefined;
+    
+    const [updated] = await db
+      .update(presentations)
+      .set({ status, updatedAt: new Date() })
+      .where(eq(presentations.id, id))
+      .returning();
+    
+    // Create history entry
+    await db.insert(presentationHistory).values({
+      presentationId: id,
+      action: 'status_changed',
+      previousStatus: existing.status,
+      newStatus: status,
+      changedBy,
+      note,
+    });
+    
+    return updated;
+  }
+
+  async uploadPresentationFile(id: number, filePath: string, changedBy: number): Promise<Presentation | undefined> {
+    const [updated] = await db
+      .update(presentations)
+      .set({ 
+        presentationFile: filePath, 
+        presentationUploadedAt: new Date(),
+        updatedAt: new Date() 
+      })
+      .where(eq(presentations.id, id))
+      .returning();
+    
+    if (updated) {
+      await db.insert(presentationHistory).values({
+        presentationId: id,
+        action: 'file_uploaded',
+        changedBy,
+        note: `Uploaded file: ${filePath}`,
+      });
+    }
+    
+    return updated;
+  }
+
+  async deletePresentation(id: number): Promise<void> {
+    await db.delete(presentationHistory).where(eq(presentationHistory.presentationId, id));
+    await db.delete(presentations).where(eq(presentations.id, id));
+  }
+
+  // ===============================
+  // CLARIFICATION OPERATIONS
+  // ===============================
+  
+  async getClarifications(): Promise<ClarificationWithDetails[]> {
+    const results = await db
+      .select()
+      .from(clarifications)
+      .orderBy(desc(clarifications.createdAt));
+    
+    return Promise.all(results.map(async (c) => this.enrichClarification(c)));
+  }
+
+  async getClarificationById(id: number): Promise<ClarificationWithDetails | undefined> {
+    const [result] = await db
+      .select()
+      .from(clarifications)
+      .where(eq(clarifications.id, id));
+    
+    if (!result) return undefined;
+    return this.enrichClarification(result);
+  }
+
+  async getClarificationsByReferenceId(referenceId: string): Promise<ClarificationWithDetails[]> {
+    const results = await db
+      .select()
+      .from(clarifications)
+      .where(eq(clarifications.referenceId, referenceId))
+      .orderBy(desc(clarifications.createdAt));
+    
+    return Promise.all(results.map(async (c) => this.enrichClarification(c)));
+  }
+
+  private async enrichClarification(c: Clarification): Promise<ClarificationWithDetails> {
+    const [assignee] = await db.select().from(teamMembers).where(eq(teamMembers.id, c.assignedTo));
+    const [creator] = await db.select().from(teamMembers).where(eq(teamMembers.id, c.createdBy));
+    
+    let tender: Tender | undefined;
+    if (c.tenderId) {
+      const [t] = await db.select().from(tenders).where(eq(tenders.id, c.tenderId));
+      tender = t;
+    }
+    
+    const history = await db
+      .select()
+      .from(clarificationHistory)
+      .where(eq(clarificationHistory.clarificationId, c.id))
+      .orderBy(desc(clarificationHistory.timestamp));
+    
+    const historyWithMembers = await Promise.all(
+      history.map(async (h) => {
+        const [member] = await db.select().from(teamMembers).where(eq(teamMembers.id, h.changedBy));
+        return { ...h, changedByMember: member };
+      })
+    );
+    
+    return {
+      ...c,
+      assignee,
+      creator,
+      tender,
+      history: historyWithMembers,
+    };
+  }
+
+  async createClarification(clarification: InsertClarification): Promise<Clarification> {
+    const [created] = await db.insert(clarifications).values(clarification).returning();
+    
+    // Create initial history entry
+    await db.insert(clarificationHistory).values({
+      clarificationId: created.id,
+      toStage: 'pending',
+      changedBy: clarification.createdBy,
+    });
+    
+    return created;
+  }
+
+  async updateClarification(id: number, clarification: Partial<InsertClarification>): Promise<Clarification | undefined> {
+    const [updated] = await db
+      .update(clarifications)
+      .set({ ...clarification, updatedAt: new Date() })
+      .where(eq(clarifications.id, id))
+      .returning();
+    
+    return updated;
+  }
+
+  async updateClarificationStage(id: number, stage: string, changedBy: number, note?: string): Promise<Clarification | undefined> {
+    const [existing] = await db.select().from(clarifications).where(eq(clarifications.id, id));
+    if (!existing) return undefined;
+    
+    const updateData: Partial<Clarification> = { 
+      currentStage: stage, 
+      stageUpdatedAt: new Date(),
+      updatedAt: new Date() 
+    };
+    
+    // If stage is 'responded', set responseDate
+    if (stage === 'responded') {
+      updateData.responseDate = new Date();
+    }
+    
+    const [updated] = await db
+      .update(clarifications)
+      .set(updateData)
+      .where(eq(clarifications.id, id))
+      .returning();
+    
+    // Create history entry
+    await db.insert(clarificationHistory).values({
+      clarificationId: id,
+      fromStage: existing.currentStage,
+      toStage: stage,
+      changedBy,
+      note,
+    });
+    
+    return updated;
+  }
+
+  async deleteClarification(id: number): Promise<void> {
+    await db.delete(clarificationHistory).where(eq(clarificationHistory.clarificationId, id));
+    await db.delete(clarifications).where(eq(clarifications.id, id));
+  }
+
+  // ===============================
+  // UNIFIED TENDER ACTIVITY OVERVIEW
+  // ===============================
+  
+  async getTenderActivityOverview(referenceId: string): Promise<TenderActivityOverview | undefined> {
+    // Find the tender by extracted reference ID in title or t247Id
+    const matchingTenders = await db
+      .select()
+      .from(tenders)
+      .where(or(
+        eq(tenders.t247Id, referenceId),
+        sql`${tenders.title} ILIKE ${'%[' + referenceId + ']%'}`
+      ))
+      .orderBy(desc(tenders.createdAt))
+      .limit(1);
+    
+    const tender = matchingTenders[0];
+    
+    // Get all related data by referenceId
+    const [
+      relatedPresentations,
+      relatedClarifications,
+      relatedResults
+    ] = await Promise.all([
+      this.getPresentationsByReferenceId(referenceId),
+      this.getClarificationsByReferenceId(referenceId),
+      db.select().from(tenderResults).where(eq(tenderResults.referenceId, referenceId))
+    ]);
+    
+    // Get enriched results
+    const enrichedResults = await Promise.all(
+      relatedResults.map(r => this.getTenderResultById(r.id))
+    );
+    
+    // Get assignments if tender exists
+    let assignments: (TenderAssignment & { assignee?: TeamMember; assigner?: TeamMember })[] = [];
+    let submissions: (BiddingSubmission & { submitter?: TeamMember })[] = [];
+    
+    if (tender) {
+      const tenderAssignmentsList = await db
+        .select()
+        .from(tenderAssignments)
+        .where(eq(tenderAssignments.tenderId, tender.id));
+      
+      assignments = await Promise.all(
+        tenderAssignmentsList.map(async (a) => {
+          const [assignee] = await db.select().from(teamMembers).where(eq(teamMembers.id, a.assignedTo));
+          const [assigner] = await db.select().from(teamMembers).where(eq(teamMembers.id, a.assignedBy));
+          return { ...a, assignee, assigner };
+        })
+      );
+      
+      const submissionsList = await db
+        .select()
+        .from(biddingSubmissions)
+        .where(eq(biddingSubmissions.tenderId, tender.id));
+      
+      submissions = await Promise.all(
+        submissionsList.map(async (s) => {
+          const [submitter] = await db.select().from(teamMembers).where(eq(teamMembers.id, s.submittedBy));
+          return { ...s, submitter };
+        })
+      );
+    }
+    
+    return {
+      tender,
+      referenceId,
+      assignments,
+      results: enrichedResults.filter(Boolean) as TenderResultWithHistory[],
+      presentations: relatedPresentations,
+      clarifications: relatedClarifications,
+      submissions,
+    };
   }
 }
 
