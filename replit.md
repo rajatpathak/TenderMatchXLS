@@ -63,6 +63,11 @@ TenderMatch is a web application for analyzing government tender eligibility wit
    - Today's clarification deadlines (auto-expire after submit deadline time)
    - Tab-based filtering (All/Presentations/Clarifications)
    - 60-second auto-refresh
+18. **Notification Marquee Banner**: Scrolling alert banner at the top of the page showing:
+   - Today's presentations and clarification deadlines
+   - Continuous scrolling animation for multiple notifications
+   - Auto-pause on hover for reading
+   - Quick link to view all notifications
 
 ## Workflow Stages
 Tenders progress through the following stages after assignment:
@@ -75,6 +80,10 @@ Tenders progress through the following stages after assignment:
 - **Admin**: Full access to all features including team management
 - **Manager**: Can assign tenders and review submissions, assign tenders to bidders
 - **Bidder**: Can update workflow status on assigned tenders, can self-assign (claim) unassigned eligible tenders
+
+## Status/Stage Update Authorization
+- **Presentations**: Admin, Manager, or the assigned team member can update the presentation status
+- **Clarifications**: Admin, Manager, or the assigned team member can update the clarification stage and submit clarifications
 
 ## Tender Assignment Flow
 - Managers/Admins can assign eligible tenders to any bidder via the "Assign" button on tender cards

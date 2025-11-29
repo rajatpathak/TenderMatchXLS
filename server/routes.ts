@@ -2140,6 +2140,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const id = parseInt(req.params.id);
       const user = req.user;
       
+      // Get the presentation to check authorization
+      const existingPresentation = await storage.getPresentationById(id);
+      if (!existingPresentation) {
+        return res.status(404).json({ message: "Presentation not found" });
+      }
+      
+      // Authorization: Admin/Manager can always update, assigned user can update their own
+      const isAdminOrManager = user?.role === 'admin' || user?.role === 'manager';
+      const isAssigned = user?.teamMemberId && existingPresentation.assignedTo === user.teamMemberId;
+      
+      if (!isAdminOrManager && !isAssigned) {
+        return res.status(403).json({ message: "Only admin, manager, or assigned team member can update status" });
+      }
+      
       const validationResult = updatePresentationStatusSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -2392,6 +2406,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const id = parseInt(req.params.id);
       const user = req.user;
       
+      // Get the clarification to check authorization
+      const existingClarification = await storage.getClarificationById(id);
+      if (!existingClarification) {
+        return res.status(404).json({ message: "Clarification not found" });
+      }
+      
+      // Authorization: Admin/Manager can always update, assigned user can update their own
+      const isAdminOrManager = user?.role === 'admin' || user?.role === 'manager';
+      const isAssigned = user?.teamMemberId && existingClarification.assignedTo === user.teamMemberId;
+      
+      if (!isAdminOrManager && !isAssigned) {
+        return res.status(403).json({ message: "Only admin, manager, or assigned team member can update stage" });
+      }
+      
       const validationResult = updateClarificationStageSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -2433,6 +2461,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const file = req.file;
       const { stage, note } = req.body;
       
+      // Get the clarification to check authorization
+      const existingClarification = await storage.getClarificationById(id);
+      if (!existingClarification) {
+        return res.status(404).json({ message: "Clarification not found" });
+      }
+      
+      // Authorization: Admin/Manager can always submit, assigned user can submit their own
+      const isAdminOrManager = user?.role === 'admin' || user?.role === 'manager';
+      const isAssigned = user?.teamMemberId && existingClarification.assignedTo === user.teamMemberId;
+      
+      if (!isAdminOrManager && !isAssigned) {
+        return res.status(403).json({ message: "Only admin, manager, or assigned team member can submit clarification" });
+      }
+      
       let changedBy = user?.teamMemberId;
       if (!changedBy) {
         const members = await storage.getTeamMembers();
@@ -2454,14 +2496,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const clarification = await storage.updateClarification(id, updateData);
-      if (!clarification) {
-        return res.status(404).json({ message: "Clarification not found" });
-      }
       
       // Add history entry
       await storage.updateClarificationStage(id, stage || 'submitted', changedBy, note);
 
-      const fullClarification = await storage.getClarificationById(clarification.id);
+      const fullClarification = await storage.getClarificationById(id);
       res.json(fullClarification);
     } catch (error) {
       console.error("Error submitting clarification:", error);
