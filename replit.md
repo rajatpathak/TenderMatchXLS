@@ -48,8 +48,12 @@ TenderMatch is a web application for analyzing government tender eligibility wit
 12. **Submission Tracking**: Record final bids with budget and portal reference
 13. **Tender Results**: Track tender outcomes (won/lost/cancelled) with history
 14. **Presentations**: Schedule presentations with team assignments, contact management, and PDF uploads
-15. **Clarifications**: Track tender clarifications through stages (submitted/pending/resolved) with team assignment
-16. **Presentation Notifications**: Header notification bell for today's scheduled presentations with auto-refresh and time-based expiry
+15. **Clarifications**: Track tender clarifications through stages (submitted/pending/resolved) with team assignment, submit deadline date/time tracking, and file upload on submission
+16. **Unified Notifications**: Header notification bell combining presentation and clarification reminders with:
+   - Today's scheduled presentations (auto-expire after scheduled time)
+   - Today's clarification deadlines (auto-expire after submit deadline time)
+   - Tab-based filtering (All/Presentations/Clarifications)
+   - 60-second auto-refresh
 
 ## Workflow Stages
 Tenders progress through the following stages after assignment:
@@ -145,10 +149,12 @@ Tenders progress through the following stages after assignment:
 
 ### Clarifications
 - `GET /api/clarifications` - List all clarifications
+- `GET /api/clarifications/today` - Get today's clarification deadlines for current user (notifications)
 - `POST /api/clarifications` - Create clarification
 - `PUT /api/clarifications/:id` - Update clarification
 - `DELETE /api/clarifications/:id` - Delete clarification
-- `POST /api/clarifications/:id/stage` - Update clarification stage
+- `PATCH /api/clarifications/:id/stage` - Update clarification stage
+- `POST /api/clarifications/:id/submit` - Submit clarification with file upload
 - `GET /api/clarifications/:id/history` - Get clarification history
 
 ### Configuration

@@ -196,6 +196,7 @@ export interface IStorage {
   updateClarification(id: number, clarification: Partial<InsertClarification>): Promise<Clarification | undefined>;
   updateClarificationStage(id: number, stage: string, changedBy: number, note?: string): Promise<Clarification | undefined>;
   deleteClarification(id: number): Promise<void>;
+  getTodaysClarificationsForUser(userId: number, isAdmin: boolean): Promise<ClarificationWithDetails[]>;
   
   // Unified tender activity overview
   getTenderActivityOverview(referenceId: string): Promise<TenderActivityOverview | undefined>;
@@ -1387,6 +1388,36 @@ export class DatabaseStorage implements IStorage {
   async deleteClarification(id: number): Promise<void> {
     await db.delete(clarificationHistory).where(eq(clarificationHistory.clarificationId, id));
     await db.delete(clarifications).where(eq(clarifications.id, id));
+  }
+
+  async getTodaysClarificationsForUser(userId: number, isAdmin: boolean): Promise<ClarificationWithDetails[]> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    // Get all clarifications with today's submit deadline that are not yet submitted
+    const results = await db
+      .select()
+      .from(clarifications)
+      .where(
+        and(
+          gte(clarifications.submitDeadlineDate, today),
+          lt(clarifications.submitDeadlineDate, tomorrow),
+          or(
+            eq(clarifications.currentStage, 'pending'),
+            eq(clarifications.currentStage, 'in_progress')
+          )
+        )
+      )
+      .orderBy(clarifications.submitDeadlineTime);
+    
+    // Filter by user access: admin sees all, regular users see only their assigned ones
+    const filteredResults = isAdmin 
+      ? results 
+      : results.filter(c => c.assignedTo === userId);
+    
+    return Promise.all(filteredResults.map(async (c) => this.enrichClarification(c)));
   }
 
   // ===============================

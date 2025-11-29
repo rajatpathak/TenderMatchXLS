@@ -67,6 +67,8 @@ const createClarificationSchema = z.object({
   assignedTo: z.number().min(1, "Assigned user is required"),
   departmentContacts: z.array(departmentContactSchema).optional().default([]),
   notes: z.string().optional(),
+  submitDeadlineDate: z.string().optional(),
+  submitDeadlineTime: z.string().optional(),
 });
 
 const updateClarificationSchema = z.object({
@@ -77,6 +79,8 @@ const updateClarificationSchema = z.object({
   departmentContacts: z.array(departmentContactSchema).optional(),
   notes: z.string().optional(),
   responseDetails: z.string().optional(),
+  submitDeadlineDate: z.string().optional(),
+  submitDeadlineTime: z.string().optional(),
 });
 
 const updateClarificationStageSchema = z.object({
@@ -2221,6 +2225,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // CLARIFICATION ROUTES
   // ===============================
 
+  // Get today's clarifications for the current user (for notifications)
+  // Note: This route MUST be before /:id route to avoid "today" being captured as an ID
+  app.get('/api/clarifications/today', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      
+      // Check if user is an admin (either from session role or team member role)
+      const isSessionAdmin = user.role === 'admin';
+      
+      // Get the team member record for the current user
+      const teamMember = await storage.getTeamMemberByUsername(user.id);
+      
+      // Determine if user is admin and their team member ID
+      const isAdmin = isSessionAdmin || (teamMember?.role === 'admin');
+      const teamMemberId = teamMember?.id ?? 0;
+      
+      // Admins get all today's clarifications, non-admins get only assigned ones
+      const clarifications = await storage.getTodaysClarificationsForUser(teamMemberId, isAdmin);
+      
+      res.json(clarifications);
+    } catch (error) {
+      console.error("Error fetching today's clarifications:", error);
+      res.status(500).json({ message: "Failed to fetch today's clarifications" });
+    }
+  });
+
   // Get all clarifications
   app.get('/api/clarifications', isAuthenticated, async (req, res) => {
     try {
@@ -2293,6 +2323,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         departmentContacts: data.departmentContacts || [],
         notes: data.notes || null,
         createdBy,
+        submitDeadlineDate: data.submitDeadlineDate ? new Date(data.submitDeadlineDate) : null,
+        submitDeadlineTime: data.submitDeadlineTime || null,
       });
 
       // Log the action
@@ -2334,7 +2366,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const data = validationResult.data;
-      const clarification = await storage.updateClarification(id, data);
+      
+      // Convert date string to Date object if present
+      const updateData: any = { ...data };
+      if (data.submitDeadlineDate) {
+        updateData.submitDeadlineDate = new Date(data.submitDeadlineDate);
+      }
+      
+      const clarification = await storage.updateClarification(id, updateData);
       if (!clarification) {
         return res.status(404).json({ message: "Clarification not found" });
       }
@@ -2383,6 +2422,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error updating clarification stage:", error);
       res.status(500).json({ message: "Failed to update clarification stage" });
+    }
+  });
+
+  // Submit clarification with file upload
+  app.post('/api/clarifications/:id/submit', isAuthenticated, upload.single('file'), async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const user = req.user;
+      const file = req.file;
+      const { stage, note } = req.body;
+      
+      let changedBy = user?.teamMemberId;
+      if (!changedBy) {
+        const members = await storage.getTeamMembers();
+        if (members.length > 0) {
+          changedBy = members[0].id;
+        } else {
+          return res.status(400).json({ message: "No team members available" });
+        }
+      }
+
+      // Update clarification with file and stage
+      const updateData: any = {
+        currentStage: stage || 'submitted',
+        submittedAt: new Date().toISOString(),
+      };
+      
+      if (file) {
+        updateData.submissionFile = file.path;
+      }
+      
+      const clarification = await storage.updateClarification(id, updateData);
+      if (!clarification) {
+        return res.status(404).json({ message: "Clarification not found" });
+      }
+      
+      // Add history entry
+      await storage.updateClarificationStage(id, stage || 'submitted', changedBy, note);
+
+      const fullClarification = await storage.getClarificationById(clarification.id);
+      res.json(fullClarification);
+    } catch (error) {
+      console.error("Error submitting clarification:", error);
+      res.status(500).json({ message: "Failed to submit clarification" });
     }
   });
 

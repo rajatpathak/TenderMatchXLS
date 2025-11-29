@@ -64,6 +64,8 @@ import {
   Trash2,
   HelpCircle,
   FileQuestion,
+  Upload,
+  File,
 } from "lucide-react";
 import { format } from "date-fns";
 import type { ClarificationWithDetails, TeamMember } from "@shared/schema";
@@ -194,6 +196,8 @@ export default function ClarificationsPage() {
     tenderId: null as number | null,
     clarificationDetails: "",
     assignedTo: 0,
+    submitDeadlineDate: "",
+    submitDeadlineTime: "",
     departmentContacts: [{ name: "", phone: "", email: "" }] as DepartmentContact[],
     notes: "",
     responseDetails: "",
@@ -202,6 +206,8 @@ export default function ClarificationsPage() {
   const [newStage, setNewStage] = useState("");
   const [stageNote, setStageNote] = useState("");
   const [isStageDialogOpen, setIsStageDialogOpen] = useState(false);
+  const [submissionFile, setSubmissionFile] = useState<File | null>(null);
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
 
   const { data: clarifications, isLoading } = useQuery<ClarificationWithDetails[]>({
     queryKey: ['/api/clarifications'],
@@ -291,6 +297,8 @@ export default function ClarificationsPage() {
       tenderId: null,
       clarificationDetails: "",
       assignedTo: 0,
+      submitDeadlineDate: "",
+      submitDeadlineTime: "",
       departmentContacts: [{ name: "", phone: "", email: "" }],
       notes: "",
       responseDetails: "",
@@ -305,6 +313,10 @@ export default function ClarificationsPage() {
       tenderId: clarification.tenderId,
       clarificationDetails: clarification.clarificationDetails,
       assignedTo: clarification.assignedTo,
+      submitDeadlineDate: clarification.submitDeadlineDate 
+        ? new Date(clarification.submitDeadlineDate).toISOString().split('T')[0] 
+        : "",
+      submitDeadlineTime: clarification.submitDeadlineTime || "",
       departmentContacts: (clarification.departmentContacts as DepartmentContact[]) || [{ name: "", phone: "", email: "" }],
       notes: clarification.notes || "",
       responseDetails: clarification.responseDetails || "",
@@ -315,7 +327,50 @@ export default function ClarificationsPage() {
   const handleStageChange = (clarification: ClarificationWithDetails) => {
     setSelectedClarification(clarification);
     setNewStage(clarification.currentStage || 'pending');
+    setStageNote("");
+    setSubmissionFile(null);
     setIsStageDialogOpen(true);
+  };
+
+  const handleStageSubmit = async () => {
+    if (!selectedClarification || !newStage) return;
+    
+    try {
+      if (newStage === 'submitted' && submissionFile) {
+        setIsUploadingFile(true);
+        const formData = new FormData();
+        formData.append('file', submissionFile);
+        formData.append('stage', newStage);
+        formData.append('note', stageNote || '');
+        
+        const response = await fetch(`/api/clarifications/${selectedClarification.id}/submit`, {
+          method: 'POST',
+          body: formData,
+          credentials: 'include',
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to submit clarification');
+        }
+        
+        queryClient.invalidateQueries({ queryKey: ['/api/clarifications'] });
+        setIsStageDialogOpen(false);
+        setNewStage("");
+        setStageNote("");
+        setSubmissionFile(null);
+        toast({ title: "Clarification submitted successfully" });
+      } else {
+        updateStageMutation.mutate({
+          id: selectedClarification.id,
+          stage: newStage,
+          note: stageNote || undefined,
+        });
+      }
+    } catch (error) {
+      toast({ title: "Failed to submit clarification", description: (error as Error).message, variant: "destructive" });
+    } finally {
+      setIsUploadingFile(false);
+    }
   };
 
   const handleViewHistory = (clarification: ClarificationWithDetails) => {
@@ -513,6 +568,31 @@ export default function ClarificationsPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Submit Deadline</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Input
+                        type="date"
+                        value={formData.submitDeadlineDate}
+                        onChange={(e) => setFormData(prev => ({ ...prev, submitDeadlineDate: e.target.value }))}
+                        data-testid="input-submit-deadline-date"
+                      />
+                    </div>
+                    <div>
+                      <Input
+                        type="time"
+                        value={formData.submitDeadlineTime}
+                        onChange={(e) => setFormData(prev => ({ ...prev, submitDeadlineTime: e.target.value }))}
+                        data-testid="input-submit-deadline-time"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    When must this clarification be submitted? Used for reminder notifications.
+                  </p>
                 </div>
 
                 <div className="space-y-2">
@@ -785,7 +865,13 @@ export default function ClarificationsPage() {
           </CardContent>
         </Card>
 
-        <Dialog open={isStageDialogOpen} onOpenChange={setIsStageDialogOpen}>
+        <Dialog open={isStageDialogOpen} onOpenChange={(open) => {
+          setIsStageDialogOpen(open);
+          if (!open) {
+            setSubmissionFile(null);
+            setStageNote("");
+          }
+        }}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Update Clarification Stage</DialogTitle>
@@ -796,7 +882,12 @@ export default function ClarificationsPage() {
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label>New Stage</Label>
-                <Select value={newStage} onValueChange={setNewStage}>
+                <Select value={newStage} onValueChange={(value) => {
+                  setNewStage(value);
+                  if (value !== 'submitted') {
+                    setSubmissionFile(null);
+                  }
+                }}>
                   <SelectTrigger data-testid="select-new-stage">
                     <SelectValue placeholder="Select stage" />
                   </SelectTrigger>
@@ -807,6 +898,51 @@ export default function ClarificationsPage() {
                   </SelectContent>
                 </Select>
               </div>
+              
+              {newStage === 'submitted' && (
+                <div className="space-y-2">
+                  <Label>Submission Document</Label>
+                  <div className="border-2 border-dashed rounded-md p-4 text-center">
+                    {submissionFile ? (
+                      <div className="flex items-center justify-center gap-2">
+                        <File className="w-5 h-5 text-muted-foreground" />
+                        <span className="text-sm">{submissionFile.name}</span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setSubmissionFile(null)}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    ) : (
+                      <label className="cursor-pointer">
+                        <div className="flex flex-col items-center gap-2">
+                          <Upload className="w-8 h-8 text-muted-foreground" />
+                          <span className="text-sm text-muted-foreground">
+                            Click to upload submission document
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            PDF, DOC, DOCX accepted
+                          </span>
+                        </div>
+                        <input
+                          type="file"
+                          className="hidden"
+                          accept=".pdf,.doc,.docx"
+                          onChange={(e) => setSubmissionFile(e.target.files?.[0] || null)}
+                          data-testid="input-submission-file"
+                        />
+                      </label>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Upload the document you submitted for this clarification
+                  </p>
+                </div>
+              )}
+              
               <div className="space-y-2">
                 <Label>Note (optional)</Label>
                 <Textarea
@@ -822,16 +958,12 @@ export default function ClarificationsPage() {
                 Cancel
               </Button>
               <Button 
-                onClick={() => selectedClarification && updateStageMutation.mutate({
-                  id: selectedClarification.id,
-                  stage: newStage,
-                  note: stageNote || undefined,
-                })}
-                disabled={!newStage || updateStageMutation.isPending}
+                onClick={handleStageSubmit}
+                disabled={!newStage || updateStageMutation.isPending || isUploadingFile}
                 data-testid="button-submit-stage"
               >
-                {updateStageMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                Update Stage
+                {(updateStageMutation.isPending || isUploadingFile) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                {newStage === 'submitted' ? 'Submit Clarification' : 'Update Stage'}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -916,6 +1048,31 @@ export default function ClarificationsPage() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Submit Deadline</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Input
+                      type="date"
+                      value={formData.submitDeadlineDate}
+                      onChange={(e) => setFormData(prev => ({ ...prev, submitDeadlineDate: e.target.value }))}
+                      data-testid="input-edit-submit-deadline-date"
+                    />
+                  </div>
+                  <div>
+                    <Input
+                      type="time"
+                      value={formData.submitDeadlineTime}
+                      onChange={(e) => setFormData(prev => ({ ...prev, submitDeadlineTime: e.target.value }))}
+                      data-testid="input-edit-submit-deadline-time"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  When must this clarification be submitted? Used for reminder notifications.
+                </p>
               </div>
 
               <div className="space-y-2">

@@ -692,12 +692,20 @@ export const clarifications = pgTable("clarifications", {
   // Assignment
   assignedTo: integer("assigned_to").references(() => teamMembers.id).notNull(),
   
+  // Submit deadline (for notifications)
+  submitDeadlineDate: timestamp("submit_deadline_date"), // Date by which clarification must be submitted
+  submitDeadlineTime: varchar("submit_deadline_time"), // Time (HH:MM) by which clarification must be submitted
+  
   // Department contacts (can be multiple)
   departmentContacts: jsonb("department_contacts").default(sql`'[]'::jsonb`), // Array of {name, phone, email}
   
   // Current stage
   currentStage: varchar("current_stage").default("pending"), // pending, in_progress, submitted, responded, closed
   stageUpdatedAt: timestamp("stage_updated_at").defaultNow(),
+  
+  // Submission file (uploaded when marking as submitted)
+  submissionFile: varchar("submission_file"), // Path to uploaded file
+  submittedAt: timestamp("submitted_at"), // When the clarification was submitted
   
   // Response details (when clarification is responded)
   responseDetails: text("response_details"),
@@ -718,6 +726,7 @@ export const insertClarificationSchema = createInsertSchema(clarifications).omit
   updatedAt: true,
   stageUpdatedAt: true,
   responseDate: true,
+  submittedAt: true,
 });
 export type InsertClarification = z.infer<typeof insertClarificationSchema>;
 export type Clarification = typeof clarifications.$inferSelect;
