@@ -1039,19 +1039,19 @@ export class DatabaseStorage implements IStorage {
       ))
       .limit(15);
     
-    // Extract GEM reference from title if present (format: [GEM/2025/B/1234567])
+    // Extract Tender ID from title if present (any text inside first brackets)
     return matchingTenders.map(t => {
-      let referenceId = t.t247Id;
+      let tenderId = t.t247Id;
       const title = t.title || '';
       
-      // Try to extract GEM reference from title brackets
-      const gemMatch = title.match(/\[?\s*(GEM\/\d{4}\/[A-Z]\/\d+)\s*\]?/i);
-      if (gemMatch) {
-        referenceId = gemMatch[1];
+      // Try to extract Tender ID from title brackets - matches [anything] at the start
+      const bracketMatch = title.match(/^\s*\[?\s*:?\s*([^\]]+)\s*\]/);
+      if (bracketMatch) {
+        tenderId = bracketMatch[1].trim();
       }
       
       return {
-        referenceId,
+        referenceId: tenderId,
         title: title || undefined,
         tenderId: t.tenderId,
       };
