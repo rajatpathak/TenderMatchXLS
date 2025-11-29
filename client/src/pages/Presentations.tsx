@@ -212,6 +212,13 @@ export default function PresentationsPage() {
 
   const { data: tenderReferences, isLoading: isSearching } = useQuery<TenderReference[]>({
     queryKey: ['/api/tender-references/search', referenceSearchQuery],
+    queryFn: async () => {
+      const res = await fetch(`/api/tender-references/search?q=${encodeURIComponent(referenceSearchQuery)}`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to search");
+      return res.json();
+    },
     enabled: referenceSearchQuery.length >= 2,
   });
 
