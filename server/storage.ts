@@ -11,6 +11,8 @@ import {
   biddingSubmissions,
   workflowHistory,
   auditLogs,
+  tenderResults,
+  tenderResultHistory,
   type User,
   type UpsertUser,
   type Tender,
@@ -35,6 +37,11 @@ import {
   type InsertWorkflowHistory,
   type AuditLog,
   type InsertAuditLog,
+  type TenderResult,
+  type InsertTenderResult,
+  type TenderResultHistory,
+  type InsertTenderResultHistory,
+  type TenderResultWithHistory,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, sql } from "drizzle-orm";
@@ -145,6 +152,15 @@ export interface IStorage {
   // Audit log operations
   getAuditLogs(filters?: { category?: string; action?: string; limit?: number }): Promise<AuditLog[]>;
   createAuditLog(log: InsertAuditLog): Promise<AuditLog>;
+  
+  // Tender result operations
+  getTenderResults(): Promise<TenderResultWithHistory[]>;
+  getTenderResultById(id: number): Promise<TenderResultWithHistory | undefined>;
+  getTenderResultByReferenceId(referenceId: string): Promise<TenderResultWithHistory | undefined>;
+  createTenderResult(result: InsertTenderResult): Promise<TenderResult>;
+  updateTenderResultStatus(id: number, status: string, updatedBy: number, note?: string): Promise<TenderResult | undefined>;
+  getTenderResultHistory(tenderResultId: number): Promise<TenderResultHistory[]>;
+  searchTenderReferences(query: string): Promise<{ referenceId: string; title?: string; tenderId?: number }[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -851,6 +867,180 @@ export class DatabaseStorage implements IStorage {
   async createAuditLog(log: InsertAuditLog): Promise<AuditLog> {
     const [created] = await db.insert(auditLogs).values(log).returning();
     return created;
+  }
+
+  // Tender result operations
+  async getTenderResults(): Promise<TenderResultWithHistory[]> {
+    const results = await db
+      .select()
+      .from(tenderResults)
+      .orderBy(desc(tenderResults.updatedAt));
+    
+    const enriched = await Promise.all(
+      results.map(async (result) => {
+        const history = await db
+          .select()
+          .from(tenderResultHistory)
+          .where(eq(tenderResultHistory.tenderResultId, result.id))
+          .orderBy(desc(tenderResultHistory.timestamp));
+        
+        const historyWithMembers = await Promise.all(
+          history.map(async (h) => {
+            const [member] = await db
+              .select()
+              .from(teamMembers)
+              .where(eq(teamMembers.id, h.updatedBy));
+            return { ...h, updatedByMember: member };
+          })
+        );
+        
+        const [updatedByMember] = await db
+          .select()
+          .from(teamMembers)
+          .where(eq(teamMembers.id, result.updatedBy));
+        
+        let tender: Tender | undefined;
+        if (result.tenderId) {
+          const [t] = await db
+            .select()
+            .from(tenders)
+            .where(eq(tenders.id, result.tenderId));
+          tender = t;
+        }
+        
+        return {
+          ...result,
+          history: historyWithMembers,
+          updatedByMember,
+          tender,
+        };
+      })
+    );
+    
+    return enriched;
+  }
+
+  async getTenderResultById(id: number): Promise<TenderResultWithHistory | undefined> {
+    const [result] = await db
+      .select()
+      .from(tenderResults)
+      .where(eq(tenderResults.id, id));
+    
+    if (!result) return undefined;
+    
+    const history = await db
+      .select()
+      .from(tenderResultHistory)
+      .where(eq(tenderResultHistory.tenderResultId, result.id))
+      .orderBy(desc(tenderResultHistory.timestamp));
+    
+    const historyWithMembers = await Promise.all(
+      history.map(async (h) => {
+        const [member] = await db
+          .select()
+          .from(teamMembers)
+          .where(eq(teamMembers.id, h.updatedBy));
+        return { ...h, updatedByMember: member };
+      })
+    );
+    
+    const [updatedByMember] = await db
+      .select()
+      .from(teamMembers)
+      .where(eq(teamMembers.id, result.updatedBy));
+    
+    let tender: Tender | undefined;
+    if (result.tenderId) {
+      const [t] = await db
+        .select()
+        .from(tenders)
+        .where(eq(tenders.id, result.tenderId));
+      tender = t;
+    }
+    
+    return {
+      ...result,
+      history: historyWithMembers,
+      updatedByMember,
+      tender,
+    };
+  }
+
+  async getTenderResultByReferenceId(referenceId: string): Promise<TenderResultWithHistory | undefined> {
+    const [result] = await db
+      .select()
+      .from(tenderResults)
+      .where(eq(tenderResults.referenceId, referenceId));
+    
+    if (!result) return undefined;
+    
+    return this.getTenderResultById(result.id);
+  }
+
+  async createTenderResult(result: InsertTenderResult): Promise<TenderResult> {
+    const [created] = await db.insert(tenderResults).values(result).returning();
+    
+    // Create initial history entry
+    await db.insert(tenderResultHistory).values({
+      tenderResultId: created.id,
+      status: result.currentStatus,
+      updatedBy: result.updatedBy,
+    });
+    
+    return created;
+  }
+
+  async updateTenderResultStatus(id: number, status: string, updatedBy: number, note?: string): Promise<TenderResult | undefined> {
+    const [updated] = await db
+      .update(tenderResults)
+      .set({ 
+        currentStatus: status, 
+        updatedBy, 
+        updatedAt: new Date() 
+      })
+      .where(eq(tenderResults.id, id))
+      .returning();
+    
+    if (!updated) return undefined;
+    
+    // Create history entry for this status change
+    await db.insert(tenderResultHistory).values({
+      tenderResultId: id,
+      status,
+      updatedBy,
+      note,
+    });
+    
+    return updated;
+  }
+
+  async getTenderResultHistory(tenderResultId: number): Promise<TenderResultHistory[]> {
+    return db
+      .select()
+      .from(tenderResultHistory)
+      .where(eq(tenderResultHistory.tenderResultId, tenderResultId))
+      .orderBy(desc(tenderResultHistory.timestamp));
+  }
+
+  async searchTenderReferences(query: string): Promise<{ referenceId: string; title?: string; tenderId?: number }[]> {
+    if (!query || query.length < 2) return [];
+    
+    // Search in existing tenders by t247Id
+    const matchingTenders = await db
+      .select({
+        referenceId: tenders.t247Id,
+        title: tenders.title,
+        tenderId: tenders.id,
+      })
+      .from(tenders)
+      .where(sql`${tenders.t247Id} ILIKE ${'%' + query + '%'}`)
+      .limit(10);
+    
+    return matchingTenders.map(t => ({
+      referenceId: t.referenceId,
+      title: t.title || undefined,
+      tenderId: t.tenderId,
+    }));
   }
 }
 

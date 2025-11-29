@@ -1709,6 +1709,156 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ===============================
+  // TENDER RESULTS ROUTES
+  // ===============================
+
+  // Get all tender results with history
+  app.get('/api/tender-results', isAuthenticated, async (req, res) => {
+    try {
+      const results = await storage.getTenderResults();
+      res.json(results);
+    } catch (error) {
+      console.error("Error fetching tender results:", error);
+      res.status(500).json({ message: "Failed to fetch tender results" });
+    }
+  });
+
+  // Get single tender result by ID
+  app.get('/api/tender-results/:id', isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const result = await storage.getTenderResultById(id);
+      if (!result) {
+        return res.status(404).json({ message: "Tender result not found" });
+      }
+      res.json(result);
+    } catch (error) {
+      console.error("Error fetching tender result:", error);
+      res.status(500).json({ message: "Failed to fetch tender result" });
+    }
+  });
+
+  // Search tender references for autocomplete
+  app.get('/api/tender-references/search', isAuthenticated, async (req, res) => {
+    try {
+      const query = req.query.q as string;
+      const results = await storage.searchTenderReferences(query || '');
+      res.json(results);
+    } catch (error) {
+      console.error("Error searching tender references:", error);
+      res.status(500).json({ message: "Failed to search tender references" });
+    }
+  });
+
+  // Create new tender result
+  app.post('/api/tender-results', isAuthenticated, async (req: any, res) => {
+    try {
+      const { referenceId, status, tenderId } = req.body;
+      const user = req.user;
+      
+      if (!referenceId || !status) {
+        return res.status(400).json({ message: "Reference ID and status are required" });
+      }
+
+      // Check if result already exists for this reference
+      const existing = await storage.getTenderResultByReferenceId(referenceId);
+      if (existing) {
+        return res.status(400).json({ 
+          message: "A result already exists for this reference ID. Use the update endpoint instead.",
+          existingId: existing.id
+        });
+      }
+
+      const updatedBy = user?.teamMemberId || 1;
+
+      const result = await storage.createTenderResult({
+        referenceId,
+        currentStatus: status,
+        tenderId: tenderId || null,
+        updatedBy,
+      });
+
+      // Log the action
+      try {
+        await storage.createAuditLog({
+          action: 'create',
+          category: 'tender_result',
+          userId: user?.id?.toString() || '0',
+          userName: user?.username || user?.email || 'unknown',
+          targetType: 'tender_result',
+          targetId: result.id.toString(),
+          targetName: referenceId,
+          details: JSON.stringify({ status }),
+          ipAddress: req.ip || 'unknown',
+        });
+      } catch (e) {
+        console.error("Failed to log tender result creation:", e);
+      }
+
+      res.json(result);
+    } catch (error) {
+      console.error("Error creating tender result:", error);
+      res.status(500).json({ message: "Failed to create tender result" });
+    }
+  });
+
+  // Update tender result status
+  app.patch('/api/tender-results/:id/status', isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { status, note } = req.body;
+      const user = req.user;
+      
+      if (!status) {
+        return res.status(400).json({ message: "Status is required" });
+      }
+
+      const updatedBy = user?.teamMemberId || 1;
+
+      const result = await storage.updateTenderResultStatus(id, status, updatedBy, note);
+      if (!result) {
+        return res.status(404).json({ message: "Tender result not found" });
+      }
+
+      // Log the status update
+      try {
+        await storage.createAuditLog({
+          action: 'status_change',
+          category: 'tender_result',
+          userId: user?.id?.toString() || '0',
+          userName: user?.username || user?.email || 'unknown',
+          targetType: 'tender_result',
+          targetId: id.toString(),
+          targetName: result.referenceId,
+          details: JSON.stringify({ newStatus: status, note }),
+          ipAddress: req.ip || 'unknown',
+        });
+      } catch (e) {
+        console.error("Failed to log tender result status change:", e);
+      }
+
+      // Get the full result with history
+      const fullResult = await storage.getTenderResultById(id);
+      res.json(fullResult);
+    } catch (error) {
+      console.error("Error updating tender result status:", error);
+      res.status(500).json({ message: "Failed to update tender result status" });
+    }
+  });
+
+  // Get history for a specific tender result
+  app.get('/api/tender-results/:id/history', isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const history = await storage.getTenderResultHistory(id);
+      res.json(history);
+    } catch (error) {
+      console.error("Error fetching tender result history:", error);
+      res.status(500).json({ message: "Failed to fetch tender result history" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

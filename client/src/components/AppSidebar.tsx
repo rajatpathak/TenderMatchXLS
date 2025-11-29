@@ -38,6 +38,7 @@ import {
   Briefcase,
   Shield,
   Calendar,
+  Trophy,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest } from "@/lib/queryClient";
@@ -190,6 +191,14 @@ export function AppSidebar() {
       badge: workflowStats?.submitted,
       color: "text-emerald-500",
       description: "Completed bids",
+    },
+    {
+      title: "Tender Results",
+      url: "/tender-results",
+      icon: Trophy,
+      badge: undefined,
+      color: "text-yellow-500",
+      description: "Track tender outcomes",
     },
     {
       title: "Team Management",

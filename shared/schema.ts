@@ -457,3 +457,104 @@ export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
 });
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
+
+// ===============================
+// TENDER RESULTS MODULE
+// ===============================
+
+// Tender result status options
+export const tenderResultStatuses = [
+  'technically_qualified',
+  'technically_rejected',
+  'l1',
+  'financially_rejected',
+  'cancelled',
+  'awarded',
+] as const;
+export type TenderResultStatus = typeof tenderResultStatuses[number];
+
+// Human-readable status labels
+export const tenderResultStatusLabels: Record<TenderResultStatus, string> = {
+  technically_qualified: 'Technically Qualified',
+  technically_rejected: 'Technically Rejected',
+  l1: 'L1',
+  financially_rejected: 'Financially Rejected',
+  cancelled: 'Cancelled',
+  awarded: 'Awarded',
+};
+
+// Status sequence for progress tracking
+export const statusSequence: TenderResultStatus[] = [
+  'technically_qualified',
+  'l1',
+  'awarded',
+];
+
+// Tender results table - tracks the current status of tender outcomes
+export const tenderResults = pgTable("tender_results", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  referenceId: varchar("reference_id").notNull(), // T247 ID or custom reference
+  tenderId: integer("tender_id").references(() => tenders.id), // Optional link to existing tender
+  currentStatus: varchar("current_status").notNull(), // Current status from tenderResultStatuses
+  updatedBy: integer("updated_by").references(() => teamMembers.id).notNull(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertTenderResultSchema = createInsertSchema(tenderResults).omit({
+  id: true,
+  updatedAt: true,
+  createdAt: true,
+});
+export type InsertTenderResult = z.infer<typeof insertTenderResultSchema>;
+export type TenderResult = typeof tenderResults.$inferSelect;
+
+// Tender result history table - tracks all status changes for audit trail
+export const tenderResultHistory = pgTable("tender_result_history", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  tenderResultId: integer("tender_result_id").references(() => tenderResults.id).notNull(),
+  status: varchar("status").notNull(), // Status from tenderResultStatuses
+  updatedBy: integer("updated_by").references(() => teamMembers.id).notNull(),
+  timestamp: timestamp("timestamp").defaultNow(),
+  note: text("note"), // Optional note for this status change
+});
+
+export const insertTenderResultHistorySchema = createInsertSchema(tenderResultHistory).omit({
+  id: true,
+  timestamp: true,
+});
+export type InsertTenderResultHistory = z.infer<typeof insertTenderResultHistorySchema>;
+export type TenderResultHistory = typeof tenderResultHistory.$inferSelect;
+
+// Relations for tender results
+export const tenderResultsRelations = relations(tenderResults, ({ one, many }) => ({
+  tender: one(tenders, {
+    fields: [tenderResults.tenderId],
+    references: [tenders.id],
+  }),
+  updatedByMember: one(teamMembers, {
+    fields: [tenderResults.updatedBy],
+    references: [teamMembers.id],
+  }),
+  history: many(tenderResultHistory),
+}));
+
+export const tenderResultHistoryRelations = relations(tenderResultHistory, ({ one }) => ({
+  tenderResult: one(tenderResults, {
+    fields: [tenderResultHistory.tenderResultId],
+    references: [tenderResults.id],
+  }),
+  updatedByMember: one(teamMembers, {
+    fields: [tenderResultHistory.updatedBy],
+    references: [teamMembers.id],
+  }),
+}));
+
+// Extended type for tender result with history
+export type TenderResultWithHistory = TenderResult & {
+  history: (TenderResultHistory & {
+    updatedByMember?: TeamMember;
+  })[];
+  updatedByMember?: TeamMember;
+  tender?: Tender;
+};
