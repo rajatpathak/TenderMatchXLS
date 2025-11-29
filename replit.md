@@ -29,27 +29,36 @@ TenderMatch is a web application for analyzing government tender eligibility wit
 ```
 
 ## Key Features
-1. **Excel Upload**: Upload tender Excel files with Gem/Non-Gem sheets
-2. **Smart Tender Categorization**: Automatic categorization into 5 categories:
+1. **Analytics Dashboard**: High-scale analytics dashboard featuring:
+   - Key metrics cards (Eligible Tenders, Active Assignments, Ready for Review, Submitted Bids)
+   - Win rate and pending results tracking
+   - Workflow distribution pie chart
+   - Tender results bar chart (Won/Lost/Cancelled)
+   - System performance metrics (API response time, success rate, uptime)
+   - Upcoming deadlines section (next 7 days)
+   - Today's schedule (presentations and clarification deadlines)
+   - Quick stats footer with overall tender counts
+2. **Excel Upload**: Upload tender Excel files with Gem/Non-Gem sheets
+3. **Smart Tender Categorization**: Automatic categorization into 5 categories:
    - **Eligible**: Matches company criteria (project types + turnover)
    - **Not Relevant**: Contains negative keywords (only for non-IT tenders)
    - **Not Eligible**: Doesn't meet turnover requirements
    - **Manual Review**: Requires PDF upload for analysis
    - **Missed**: Tenders past deadline
-3. **Intelligent Negative Keywords**: IT/Software tenders override negative keywords
-4. **Manual Override**: Override automatic categorization with reason and comment
-5. **MSME/Startup Exemptions**: Automatic detection of turnover exemptions
-6. **Corrigendum Tracking**: Detect duplicate T247 IDs and track changes
-7. **PDF Analysis**: Upload PDFs for tenders with unclear eligibility
-8. **Project Type Filtering**: Filter dashboard by detected tags
-9. **Team Management**: Add team members with roles (admin/manager/bidder)
-10. **Tender Assignment**: Assign eligible tenders to bidders with priority and deadline
-11. **Workflow Management**: Track tender progress through bidding stages
-12. **Submission Tracking**: Record final bids with budget and portal reference
-13. **Tender Results**: Track tender outcomes (won/lost/cancelled) with history
-14. **Presentations**: Schedule presentations with team assignments, contact management, and PDF uploads
-15. **Clarifications**: Track tender clarifications through stages (submitted/pending/resolved) with team assignment, submit deadline date/time tracking, and file upload on submission
-16. **Unified Notifications**: Header notification bell combining presentation and clarification reminders with:
+4. **Intelligent Negative Keywords**: IT/Software tenders override negative keywords
+5. **Manual Override**: Override automatic categorization with reason and comment
+6. **MSME/Startup Exemptions**: Automatic detection of turnover exemptions
+7. **Corrigendum Tracking**: Detect duplicate T247 IDs and track changes
+8. **PDF Analysis**: Upload PDFs for tenders with unclear eligibility
+9. **Project Type Filtering**: Filter dashboard by detected tags
+10. **Team Management**: Add team members with roles (admin/manager/bidder)
+11. **Tender Assignment**: Assign eligible tenders to bidders with priority and deadline
+12. **Workflow Management**: Track tender progress through bidding stages
+13. **Submission Tracking**: Record final bids with budget and portal reference
+14. **Tender Results**: Track tender outcomes (won/lost/cancelled) with history
+15. **Presentations**: Schedule presentations with team assignments, contact management, and PDF uploads
+16. **Clarifications**: Track tender clarifications through stages (submitted/pending/resolved) with team assignment, submit deadline date/time tracking, and file upload on submission
+17. **Unified Notifications**: Header notification bell combining presentation and clarification reminders with:
    - Today's scheduled presentations (auto-expire after scheduled time)
    - Today's clarification deadlines (auto-expire after submit deadline time)
    - Tab-based filtering (All/Presentations/Clarifications)
