@@ -558,3 +558,261 @@ export type TenderResultWithHistory = TenderResult & {
   updatedByMember?: TeamMember;
   tender?: Tender;
 };
+
+// ===============================
+// PRESENTATION MODULE
+// ===============================
+
+// Presentation status
+export const presentationStatuses = ['scheduled', 'completed', 'cancelled', 'postponed'] as const;
+export type PresentationStatus = typeof presentationStatuses[number];
+
+// Presentations table - tracks scheduled presentations for tenders
+export const presentations = pgTable("presentations", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  referenceId: varchar("reference_id").notNull(), // Tender ID from title brackets
+  tenderId: integer("tender_id").references(() => tenders.id), // Optional link to existing tender
+  
+  // Schedule
+  scheduledDate: timestamp("scheduled_date").notNull(),
+  scheduledTime: varchar("scheduled_time").notNull(), // Store as HH:MM format
+  
+  // Assignment
+  assignedTo: integer("assigned_to").references(() => teamMembers.id).notNull(),
+  
+  // Department contacts (can be multiple)
+  departmentContacts: jsonb("department_contacts").default(sql`'[]'::jsonb`), // Array of {name, phone, email}
+  
+  // Status and completion
+  status: varchar("status").default("scheduled"), // scheduled, completed, cancelled, postponed
+  
+  // Presentation document
+  presentationFile: varchar("presentation_file"), // PDF file path
+  presentationUploadedAt: timestamp("presentation_uploaded_at"),
+  
+  // Notes
+  notes: text("notes"),
+  
+  // Audit
+  createdBy: integer("created_by").references(() => teamMembers.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertPresentationSchema = createInsertSchema(presentations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  presentationUploadedAt: true,
+});
+export type InsertPresentation = z.infer<typeof insertPresentationSchema>;
+export type Presentation = typeof presentations.$inferSelect;
+
+// Presentation history for audit trail
+export const presentationHistory = pgTable("presentation_history", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  presentationId: integer("presentation_id").references(() => presentations.id).notNull(),
+  action: varchar("action").notNull(), // created, updated, status_changed, file_uploaded
+  previousStatus: varchar("previous_status"),
+  newStatus: varchar("new_status"),
+  changedBy: integer("changed_by").references(() => teamMembers.id).notNull(),
+  note: text("note"),
+  timestamp: timestamp("timestamp").defaultNow(),
+});
+
+export const insertPresentationHistorySchema = createInsertSchema(presentationHistory).omit({
+  id: true,
+  timestamp: true,
+});
+export type InsertPresentationHistory = z.infer<typeof insertPresentationHistorySchema>;
+export type PresentationHistory = typeof presentationHistory.$inferSelect;
+
+// Relations for presentations
+export const presentationsRelations = relations(presentations, ({ one, many }) => ({
+  tender: one(tenders, {
+    fields: [presentations.tenderId],
+    references: [tenders.id],
+  }),
+  assignee: one(teamMembers, {
+    fields: [presentations.assignedTo],
+    references: [teamMembers.id],
+    relationName: "presentationAssignee",
+  }),
+  creator: one(teamMembers, {
+    fields: [presentations.createdBy],
+    references: [teamMembers.id],
+    relationName: "presentationCreator",
+  }),
+  history: many(presentationHistory),
+}));
+
+export const presentationHistoryRelations = relations(presentationHistory, ({ one }) => ({
+  presentation: one(presentations, {
+    fields: [presentationHistory.presentationId],
+    references: [presentations.id],
+  }),
+  changedByMember: one(teamMembers, {
+    fields: [presentationHistory.changedBy],
+    references: [teamMembers.id],
+  }),
+}));
+
+// Extended presentation type with relations
+export type PresentationWithDetails = Presentation & {
+  assignee?: TeamMember;
+  creator?: TeamMember;
+  tender?: Tender;
+  history?: (PresentationHistory & { changedByMember?: TeamMember })[];
+};
+
+// Department contact type
+export type DepartmentContact = {
+  name?: string;
+  phone?: string;
+  email?: string;
+};
+
+// ===============================
+// CLARIFICATION MODULE
+// ===============================
+
+// Clarification stages (similar to tender workflow)
+export const clarificationStages = ['pending', 'in_progress', 'submitted', 'responded', 'closed'] as const;
+export type ClarificationStage = typeof clarificationStages[number];
+
+// Clarifications table - tracks tender clarifications
+export const clarifications = pgTable("clarifications", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  referenceId: varchar("reference_id").notNull(), // Tender ID from title brackets
+  tenderId: integer("tender_id").references(() => tenders.id), // Optional link to existing tender
+  
+  // Clarification details
+  clarificationDetails: text("clarification_details").notNull(),
+  
+  // Assignment
+  assignedTo: integer("assigned_to").references(() => teamMembers.id).notNull(),
+  
+  // Department contacts (can be multiple)
+  departmentContacts: jsonb("department_contacts").default(sql`'[]'::jsonb`), // Array of {name, phone, email}
+  
+  // Current stage
+  currentStage: varchar("current_stage").default("pending"), // pending, in_progress, submitted, responded, closed
+  stageUpdatedAt: timestamp("stage_updated_at").defaultNow(),
+  
+  // Response details (when clarification is responded)
+  responseDetails: text("response_details"),
+  responseDate: timestamp("response_date"),
+  
+  // Notes
+  notes: text("notes"),
+  
+  // Audit
+  createdBy: integer("created_by").references(() => teamMembers.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertClarificationSchema = createInsertSchema(clarifications).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  stageUpdatedAt: true,
+  responseDate: true,
+});
+export type InsertClarification = z.infer<typeof insertClarificationSchema>;
+export type Clarification = typeof clarifications.$inferSelect;
+
+// Clarification history for stage tracking
+export const clarificationHistory = pgTable("clarification_history", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  clarificationId: integer("clarification_id").references(() => clarifications.id).notNull(),
+  fromStage: varchar("from_stage"),
+  toStage: varchar("to_stage").notNull(),
+  changedBy: integer("changed_by").references(() => teamMembers.id).notNull(),
+  note: text("note"),
+  timestamp: timestamp("timestamp").defaultNow(),
+});
+
+export const insertClarificationHistorySchema = createInsertSchema(clarificationHistory).omit({
+  id: true,
+  timestamp: true,
+});
+export type InsertClarificationHistory = z.infer<typeof insertClarificationHistorySchema>;
+export type ClarificationHistory = typeof clarificationHistory.$inferSelect;
+
+// Relations for clarifications
+export const clarificationsRelations = relations(clarifications, ({ one, many }) => ({
+  tender: one(tenders, {
+    fields: [clarifications.tenderId],
+    references: [tenders.id],
+  }),
+  assignee: one(teamMembers, {
+    fields: [clarifications.assignedTo],
+    references: [teamMembers.id],
+    relationName: "clarificationAssignee",
+  }),
+  creator: one(teamMembers, {
+    fields: [clarifications.createdBy],
+    references: [teamMembers.id],
+    relationName: "clarificationCreator",
+  }),
+  history: many(clarificationHistory),
+}));
+
+export const clarificationHistoryRelations = relations(clarificationHistory, ({ one }) => ({
+  clarification: one(clarifications, {
+    fields: [clarificationHistory.clarificationId],
+    references: [clarifications.id],
+  }),
+  changedByMember: one(teamMembers, {
+    fields: [clarificationHistory.changedBy],
+    references: [teamMembers.id],
+  }),
+}));
+
+// Extended clarification type with relations
+export type ClarificationWithDetails = Clarification & {
+  assignee?: TeamMember;
+  creator?: TeamMember;
+  tender?: Tender;
+  history?: (ClarificationHistory & { changedByMember?: TeamMember })[];
+};
+
+// Human-readable stage labels for clarifications
+export const clarificationStageLabels: Record<ClarificationStage, string> = {
+  pending: 'Pending',
+  in_progress: 'In Progress',
+  submitted: 'Submitted',
+  responded: 'Responded',
+  closed: 'Closed',
+};
+
+// ===============================
+// UNIFIED TENDER DETAILS TYPE
+// ===============================
+
+// Complete tender activity overview for unified details view
+export type TenderActivityOverview = {
+  tender?: Tender;
+  referenceId: string;
+  
+  // Assignments
+  assignments?: (TenderAssignment & {
+    assignee?: TeamMember;
+    assigner?: TeamMember;
+  })[];
+  
+  // Results
+  results?: TenderResultWithHistory[];
+  
+  // Presentations
+  presentations?: PresentationWithDetails[];
+  
+  // Clarifications
+  clarifications?: ClarificationWithDetails[];
+  
+  // Submissions
+  submissions?: (BiddingSubmission & {
+    submitter?: TeamMember;
+  })[];
+};
