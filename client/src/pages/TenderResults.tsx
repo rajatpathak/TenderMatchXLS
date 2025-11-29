@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,19 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -47,6 +60,9 @@ import {
   History,
   Loader2,
   ChevronRight,
+  ChevronsUpDown,
+  Check,
+  X,
 } from "lucide-react";
 import { format } from "date-fns";
 import type { 
@@ -170,16 +186,24 @@ function AddResultDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const { toast } = useToast();
-  const [referenceId, setReferenceId] = useState("");
+  const [selectedReference, setSelectedReference] = useState<TenderReference | null>(null);
   const [status, setStatus] = useState("");
-  const [selectedTenderId, setSelectedTenderId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [isSearching, setIsSearching] = useState(false);
+  const [popoverOpen, setPopoverOpen] = useState(false);
 
-  const { data: searchResults = [] } = useQuery<TenderReference[]>({
+  const { data: searchResults = [], isLoading: isSearching } = useQuery<TenderReference[]>({
     queryKey: ['/api/tender-references/search', searchQuery],
     enabled: searchQuery.length >= 2,
   });
+
+  useEffect(() => {
+    if (!open) {
+      setSelectedReference(null);
+      setStatus("");
+      setSearchQuery("");
+      setPopoverOpen(false);
+    }
+  }, [open]);
 
   const createMutation = useMutation({
     mutationFn: async (data: { referenceId: string; status: string; tenderId?: number }) => {
@@ -189,10 +213,6 @@ function AddResultDialog({
       queryClient.invalidateQueries({ queryKey: ['/api/tender-results'] });
       toast({ title: "Tender result created successfully" });
       onOpenChange(false);
-      setReferenceId("");
-      setStatus("");
-      setSelectedTenderId(null);
-      setSearchQuery("");
     },
     onError: (error: any) => {
       toast({ 
@@ -204,22 +224,30 @@ function AddResultDialog({
   });
 
   const handleSubmit = () => {
-    if (!referenceId || !status) {
-      toast({ title: "Please fill in all required fields", variant: "destructive" });
+    if (!selectedReference) {
+      toast({ title: "Please select a Reference ID from the list", variant: "destructive" });
+      return;
+    }
+    if (!status) {
+      toast({ title: "Please select a status", variant: "destructive" });
       return;
     }
     createMutation.mutate({ 
-      referenceId, 
+      referenceId: selectedReference.referenceId, 
       status, 
-      tenderId: selectedTenderId || undefined 
+      tenderId: selectedReference.tenderId || undefined 
     });
   };
 
   const handleSelectReference = (ref: TenderReference) => {
-    setReferenceId(ref.referenceId);
-    setSelectedTenderId(ref.tenderId || null);
+    setSelectedReference(ref);
     setSearchQuery("");
-    setIsSearching(false);
+    setPopoverOpen(false);
+  };
+
+  const handleClearSelection = () => {
+    setSelectedReference(null);
+    setSearchQuery("");
   };
 
   return (
@@ -228,64 +256,98 @@ function AddResultDialog({
         <DialogHeader>
           <DialogTitle>Add New Tender Result</DialogTitle>
           <DialogDescription>
-            Record a new tender result status. Search for an existing tender or enter a custom reference ID.
+            Select a tender from the system and record its result status.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-4">
           <div className="space-y-2">
-            <Label htmlFor="referenceId">Reference ID</Label>
-            <div className="relative">
-              <Input
-                id="referenceId"
-                placeholder="Search or enter Reference ID..."
-                value={isSearching ? searchQuery : referenceId}
-                onChange={(e) => {
-                  if (isSearching) {
-                    setSearchQuery(e.target.value);
-                  } else {
-                    setReferenceId(e.target.value);
-                    setSelectedTenderId(null);
-                  }
-                }}
-                onFocus={() => setIsSearching(true)}
-                data-testid="input-reference-id"
-              />
-              {isSearching && searchQuery.length >= 2 && searchResults.length > 0 && (
-                <div className="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-lg max-h-48 overflow-auto">
-                  {searchResults.map((ref) => (
-                    <button
-                      key={ref.referenceId}
-                      className="w-full text-left px-3 py-2 hover-elevate cursor-pointer"
-                      onClick={() => handleSelectReference(ref)}
-                      data-testid={`select-reference-${ref.referenceId}`}
-                    >
-                      <p className="font-medium text-sm">{ref.referenceId}</p>
-                      {ref.title && (
-                        <p className="text-xs text-muted-foreground truncate">{ref.title}</p>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {isSearching && (
+            <Label>Reference ID</Label>
+            <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={popoverOpen}
+                  className="w-full justify-between"
+                  data-testid="button-select-reference"
+                >
+                  {selectedReference ? (
+                    <span className="truncate">{selectedReference.referenceId}</span>
+                  ) : (
+                    <span className="text-muted-foreground">Search and select a Reference ID...</span>
+                  )}
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[400px] p-0" align="start">
+                <Command shouldFilter={false}>
+                  <CommandInput 
+                    placeholder="Type to search Reference IDs..." 
+                    value={searchQuery}
+                    onValueChange={setSearchQuery}
+                    data-testid="input-search-reference"
+                  />
+                  <CommandList>
+                    {searchQuery.length < 2 ? (
+                      <CommandEmpty>Type at least 2 characters to search...</CommandEmpty>
+                    ) : isSearching ? (
+                      <CommandEmpty>
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Searching...</span>
+                        </div>
+                      </CommandEmpty>
+                    ) : searchResults.length === 0 ? (
+                      <CommandEmpty>No matching tenders found.</CommandEmpty>
+                    ) : (
+                      <CommandGroup heading="Matching Tenders">
+                        {searchResults.map((ref) => (
+                          <CommandItem
+                            key={ref.referenceId}
+                            value={ref.referenceId}
+                            onSelect={() => handleSelectReference(ref)}
+                            className="cursor-pointer"
+                            data-testid={`option-reference-${ref.referenceId}`}
+                          >
+                            <Check
+                              className={`mr-2 h-4 w-4 ${
+                                selectedReference?.referenceId === ref.referenceId 
+                                  ? "opacity-100" 
+                                  : "opacity-0"
+                              }`}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-sm">{ref.referenceId}</p>
+                              {ref.title && (
+                                <p className="text-xs text-muted-foreground truncate">{ref.title}</p>
+                              )}
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    )}
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+            {selectedReference && (
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground">
+                  Selected: <span className="font-medium text-foreground">{selectedReference.referenceId}</span>
+                  {selectedReference.tenderId && (
+                    <span className="text-muted-foreground"> (ID: {selectedReference.tenderId})</span>
+                  )}
+                </span>
                 <Button 
                   variant="ghost" 
-                  size="sm" 
-                  className="absolute right-1 top-1"
-                  onClick={() => {
-                    setIsSearching(false);
-                    if (searchQuery && !referenceId) {
-                      setReferenceId(searchQuery);
-                    }
-                    setSearchQuery("");
-                  }}
+                  size="icon" 
+                  className="h-5 w-5"
+                  onClick={handleClearSelection}
+                  data-testid="button-clear-reference"
                 >
-                  Done
+                  <X className="h-3 w-3" />
                 </Button>
-              )}
-            </div>
-            {selectedTenderId && (
-              <p className="text-xs text-muted-foreground">Linked to existing tender #{selectedTenderId}</p>
+              </div>
             )}
           </div>
 
@@ -309,12 +371,12 @@ function AddResultDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="button-cancel">
             Cancel
           </Button>
           <Button 
             onClick={handleSubmit} 
-            disabled={createMutation.isPending}
+            disabled={createMutation.isPending || !selectedReference}
             data-testid="button-save-result"
           >
             {createMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
