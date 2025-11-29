@@ -139,6 +139,23 @@ export default function SubmittedTenders() {
     queryKey: ["/api/clarifications"],
   });
 
+  // Extract reference ID from tender title (e.g., "Title [GEM/2025/B/6937489]" -> "GEM/2025/B/6937489")
+  const extractReferenceFromTitle = (title: string | null | undefined): string | null => {
+    if (!title) return null;
+    // Match patterns like [GEM/2025/B/6937489] or (GEM/2025/B/6937489)
+    const bracketMatch = title.match(/\[(GEM\/\d{4}\/[A-Z]\/\d+)\]/i);
+    if (bracketMatch) return bracketMatch[1].toUpperCase();
+    
+    const parenMatch = title.match(/\((GEM\/\d{4}\/[A-Z]\/\d+)\)/i);
+    if (parenMatch) return parenMatch[1].toUpperCase();
+    
+    // Also match standalone GEM reference in title
+    const standaloneMatch = title.match(/(GEM\/\d{4}\/[A-Z]\/\d+)/i);
+    if (standaloneMatch) return standaloneMatch[1].toUpperCase();
+    
+    return null;
+  };
+
   const filteredSubmissions = useMemo(() => {
     if (!searchQuery.trim()) return submissions;
     const query = searchQuery.toLowerCase();
@@ -159,24 +176,37 @@ export default function SubmittedTenders() {
     const tender = submission.tender;
     if (!tender) return null;
     
+    const extractedRef = extractReferenceFromTitle(tender.title);
+    
     return tenderResults.find(
       (result) => 
         result.tenderId === tender.id || 
-        result.referenceId === tender.t247Id
+        result.referenceId === tender.t247Id ||
+        (extractedRef && result.referenceId?.toUpperCase() === extractedRef)
     );
   };
 
   const getPresentationsForTender = (tender: Tender | undefined) => {
     if (!tender) return [];
+    const extractedRef = extractReferenceFromTitle(tender.title);
+    
     return presentations.filter(
-      (p) => p.tenderId === tender.id || p.referenceId === tender.t247Id
+      (p) => 
+        p.tenderId === tender.id || 
+        p.referenceId === tender.t247Id ||
+        (extractedRef && p.referenceId?.toUpperCase() === extractedRef)
     );
   };
 
   const getClarificationsForTender = (tender: Tender | undefined) => {
     if (!tender) return [];
+    const extractedRef = extractReferenceFromTitle(tender.title);
+    
     return clarifications.filter(
-      (c) => c.tenderId === tender.id || c.referenceId === tender.t247Id
+      (c) => 
+        c.tenderId === tender.id || 
+        c.referenceId === tender.t247Id ||
+        (extractedRef && c.referenceId?.toUpperCase() === extractedRef)
     );
   };
 
