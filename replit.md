@@ -49,6 +49,7 @@ TenderMatch is a web application for analyzing government tender eligibility wit
 13. **Tender Results**: Track tender outcomes (won/lost/cancelled) with history
 14. **Presentations**: Schedule presentations with team assignments, contact management, and PDF uploads
 15. **Clarifications**: Track tender clarifications through stages (submitted/pending/resolved) with team assignment
+16. **Presentation Notifications**: Header notification bell for today's scheduled presentations with auto-refresh and time-based expiry
 
 ## Workflow Stages
 Tenders progress through the following stages after assignment:
@@ -135,6 +136,7 @@ Tenders progress through the following stages after assignment:
 
 ### Presentations
 - `GET /api/presentations` - List all presentations
+- `GET /api/presentations/today` - Get today's presentations for current user (notifications)
 - `POST /api/presentations` - Create presentation
 - `PUT /api/presentations/:id` - Update presentation
 - `DELETE /api/presentations/:id` - Delete presentation
