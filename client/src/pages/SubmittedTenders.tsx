@@ -84,15 +84,12 @@ function formatLakhs(value: string | number | null | undefined): string {
 }
 
 const resultStatusConfig: Record<string, { label: string; color: string; icon: typeof Trophy }> = {
-  technical_qualified: { label: "Technical Qualified", color: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300", icon: FileCheck },
-  technical_not_qualified: { label: "Technical Not Qualified", color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300", icon: XCircle },
-  financial_evaluation: { label: "Financial Evaluation", color: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300", icon: IndianRupee },
+  technically_qualified: { label: "Technically Qualified", color: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300", icon: FileCheck },
+  technically_rejected: { label: "Technically Rejected", color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300", icon: XCircle },
   l1: { label: "L1", color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300", icon: Award },
-  l2: { label: "L2", color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300", icon: Trophy },
-  l3_or_below: { label: "L3 or Below", color: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300", icon: Trophy },
-  won: { label: "Won", color: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300", icon: CheckCircle2 },
-  lost: { label: "Lost", color: "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300", icon: XCircle },
+  financially_rejected: { label: "Financially Rejected", color: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300", icon: IndianRupee },
   cancelled: { label: "Cancelled", color: "bg-slate-100 text-slate-800 dark:bg-slate-900/30 dark:text-slate-300", icon: AlertCircle },
+  awarded: { label: "Awarded", color: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300", icon: CheckCircle2 },
 };
 
 const presentationStatusConfig: Record<string, { label: string; color: string }> = {
