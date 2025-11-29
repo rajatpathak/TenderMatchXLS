@@ -6,7 +6,24 @@ import * as XLSX from "xlsx";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./simpleAuth";
 import { analyzeEligibility, detectCorrigendumChanges } from "./eligibilityMatcher";
-import type { InsertTender } from "@shared/schema";
+import { type InsertTender, tenderResultStatuses } from "@shared/schema";
+import { z } from "zod";
+
+// Validation schemas for tender results
+const createTenderResultSchema = z.object({
+  referenceId: z.string().min(1, "Reference ID is required"),
+  status: z.enum(tenderResultStatuses as [string, ...string[]], {
+    errorMap: () => ({ message: "Invalid status" })
+  }),
+  tenderId: z.number().nullable().optional(),
+});
+
+const updateTenderResultStatusSchema = z.object({
+  status: z.enum(tenderResultStatuses as [string, ...string[]], {
+    errorMap: () => ({ message: "Invalid status" })
+  }),
+  note: z.string().optional(),
+});
 
 const require = createRequire(import.meta.url);
 const pdfParse = require("pdf-parse");
@@ -1754,12 +1771,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create new tender result
   app.post('/api/tender-results', isAuthenticated, async (req: any, res) => {
     try {
-      const { referenceId, status, tenderId } = req.body;
       const user = req.user;
       
-      if (!referenceId || !status) {
-        return res.status(400).json({ message: "Reference ID and status are required" });
+      // Validate request body with Zod
+      const validationResult = createTenderResultSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: "Validation failed", 
+          errors: validationResult.error.errors 
+        });
       }
+      
+      const { referenceId, status, tenderId } = validationResult.data;
 
       // Check if result already exists for this reference
       const existing = await storage.getTenderResultByReferenceId(referenceId);
@@ -1770,7 +1793,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const updatedBy = user?.teamMemberId || 1;
+      // Require valid team member ID - if not available, get the first team member as fallback
+      let updatedBy = user?.teamMemberId;
+      if (!updatedBy) {
+        const members = await storage.getTeamMembers();
+        if (members.length > 0) {
+          updatedBy = members[0].id;
+        } else {
+          return res.status(400).json({ message: "No team members available to assign this action" });
+        }
+      }
 
       const result = await storage.createTenderResult({
         referenceId,
@@ -1807,14 +1839,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch('/api/tender-results/:id/status', isAuthenticated, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
-      const { status, note } = req.body;
       const user = req.user;
       
-      if (!status) {
-        return res.status(400).json({ message: "Status is required" });
+      // Validate request body with Zod
+      const validationResult = updateTenderResultStatusSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: "Validation failed", 
+          errors: validationResult.error.errors 
+        });
       }
+      
+      const { status, note } = validationResult.data;
 
-      const updatedBy = user?.teamMemberId || 1;
+      // Require valid team member ID - if not available, get the first team member as fallback
+      let updatedBy = user?.teamMemberId;
+      if (!updatedBy) {
+        const members = await storage.getTeamMembers();
+        if (members.length > 0) {
+          updatedBy = members[0].id;
+        } else {
+          return res.status(400).json({ message: "No team members available to assign this action" });
+        }
+      }
 
       const result = await storage.updateTenderResultStatus(id, status, updatedBy, note);
       if (!result) {
