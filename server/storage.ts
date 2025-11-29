@@ -1025,10 +1025,10 @@ export class DatabaseStorage implements IStorage {
   async searchTenderReferences(query: string): Promise<{ referenceId: string; title?: string; tenderId?: number }[]> {
     if (!query || query.length < 2) return [];
     
-    // Search in existing tenders by t247Id OR title
+    // Search in existing tenders by t247Id OR title (including GEM reference in title)
     const matchingTenders = await db
       .select({
-        referenceId: tenders.t247Id,
+        t247Id: tenders.t247Id,
         title: tenders.title,
         tenderId: tenders.id,
       })
@@ -1039,11 +1039,23 @@ export class DatabaseStorage implements IStorage {
       ))
       .limit(15);
     
-    return matchingTenders.map(t => ({
-      referenceId: t.referenceId,
-      title: t.title || undefined,
-      tenderId: t.tenderId,
-    }));
+    // Extract GEM reference from title if present (format: [GEM/2025/B/1234567])
+    return matchingTenders.map(t => {
+      let referenceId = t.t247Id;
+      const title = t.title || '';
+      
+      // Try to extract GEM reference from title brackets
+      const gemMatch = title.match(/\[?\s*(GEM\/\d{4}\/[A-Z]\/\d+)\s*\]?/i);
+      if (gemMatch) {
+        referenceId = gemMatch[1];
+      }
+      
+      return {
+        referenceId,
+        title: title || undefined,
+        tenderId: t.tenderId,
+      };
+    });
   }
 }
 
