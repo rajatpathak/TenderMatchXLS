@@ -590,6 +590,9 @@ export const presentations = pgTable("presentations", {
   presentationFile: varchar("presentation_file"), // PDF file path
   presentationUploadedAt: timestamp("presentation_uploaded_at"),
   
+  // Document attached during creation
+  documentFile: varchar("document_file"), // Attached document (PDF, image, Word)
+  
   // Notes
   notes: text("notes"),
   
@@ -702,6 +705,9 @@ export const clarifications = pgTable("clarifications", {
   // Current stage
   currentStage: varchar("current_stage").default("pending"), // pending, in_progress, submitted, responded, closed
   stageUpdatedAt: timestamp("stage_updated_at").defaultNow(),
+  
+  // Document attached during creation
+  documentFile: varchar("document_file"), // Attached document (PDF, image, Word)
   
   // Submission file (uploaded when marking as submitted)
   submissionFile: varchar("submission_file"), // Path to uploaded file

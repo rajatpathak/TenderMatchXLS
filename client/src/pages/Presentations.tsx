@@ -197,6 +197,8 @@ export default function PresentationsPage() {
     departmentContacts: [{ name: "", phone: "", email: "" }] as DepartmentContact[],
     notes: "",
   });
+  
+  const [documentFile, setDocumentFile] = useState<File | null>(null);
 
   const [newStatus, setNewStatus] = useState("");
   const [statusNote, setStatusNote] = useState("");
@@ -223,8 +225,23 @@ export default function PresentationsPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: async (data: typeof formData) => {
-      const res = await apiRequest('POST', '/api/presentations', data);
+    mutationFn: async ({ data, file }: { data: typeof formData; file: File | null }) => {
+      const formDataObj = new FormData();
+      formDataObj.append('referenceId', data.referenceId);
+      if (data.tenderId) formDataObj.append('tenderId', data.tenderId.toString());
+      formDataObj.append('scheduledDate', data.scheduledDate);
+      formDataObj.append('scheduledTime', data.scheduledTime);
+      formDataObj.append('assignedTo', data.assignedTo.toString());
+      formDataObj.append('departmentContacts', JSON.stringify(data.departmentContacts));
+      if (data.notes) formDataObj.append('notes', data.notes);
+      if (file) formDataObj.append('document', file);
+      
+      const res = await fetch('/api/presentations', {
+        method: 'POST',
+        body: formDataObj,
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Failed to create presentation');
       return res.json();
     },
     onSuccess: () => {
@@ -294,6 +311,7 @@ export default function PresentationsPage() {
       departmentContacts: [{ name: "", phone: "", email: "" }],
       notes: "",
     });
+    setDocumentFile(null);
     setReferenceSearchQuery("");
   };
 
@@ -587,6 +605,34 @@ export default function PresentationsPage() {
                     data-testid="textarea-notes"
                   />
                 </div>
+
+                <div className="space-y-2">
+                  <Label>Attach Document (Optional)</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="file"
+                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif"
+                      onChange={(e) => setDocumentFile(e.target.files?.[0] || null)}
+                      data-testid="input-document-file"
+                      className="flex-1"
+                    />
+                    {documentFile && (
+                      <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                        <FileText className="w-4 h-4" />
+                        <span className="truncate max-w-[150px]">{documentFile.name}</span>
+                        <Button 
+                          size="icon" 
+                          variant="ghost" 
+                          onClick={() => setDocumentFile(null)}
+                          data-testid="button-remove-document"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Supported: PDF, Word, Images (JPG, PNG, GIF)</p>
+                </div>
               </div>
 
               <DialogFooter>
@@ -598,7 +644,7 @@ export default function PresentationsPage() {
                   Cancel
                 </Button>
                 <Button 
-                  onClick={() => createMutation.mutate(formData)}
+                  onClick={() => createMutation.mutate({ data: formData, file: documentFile })}
                   disabled={!formData.referenceId || !formData.scheduledDate || !formData.scheduledTime || !formData.assignedTo || createMutation.isPending}
                   data-testid="button-submit-add"
                 >

@@ -2039,12 +2039,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Create new presentation
-  app.post('/api/presentations', isAuthenticated, async (req: any, res) => {
+  // Create new presentation (with optional file upload)
+  app.post('/api/presentations', isAuthenticated, upload.single('document'), async (req: any, res) => {
     try {
       const user = req.user;
+      const file = req.file;
       
-      const validationResult = createPresentationSchema.safeParse(req.body);
+      // Parse JSON body fields if they come as strings (from FormData)
+      let bodyData = req.body;
+      if (typeof req.body.departmentContacts === 'string') {
+        try {
+          bodyData = {
+            ...req.body,
+            departmentContacts: JSON.parse(req.body.departmentContacts),
+            tenderId: req.body.tenderId ? parseInt(req.body.tenderId) : null,
+            assignedTo: parseInt(req.body.assignedTo),
+          };
+        } catch (e) {
+          bodyData = req.body;
+        }
+      }
+      
+      const validationResult = createPresentationSchema.safeParse(bodyData);
       if (!validationResult.success) {
         return res.status(400).json({ 
           message: "Validation failed", 
@@ -2074,6 +2090,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         departmentContacts: data.departmentContacts || [],
         notes: data.notes || null,
         createdBy,
+        documentFile: file ? file.path : null,
       });
 
       // Log the action
@@ -2303,12 +2320,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Create new clarification
-  app.post('/api/clarifications', isAuthenticated, async (req: any, res) => {
+  // Create new clarification (with optional file upload)
+  app.post('/api/clarifications', isAuthenticated, upload.single('document'), async (req: any, res) => {
     try {
       const user = req.user;
+      const file = req.file;
       
-      const validationResult = createClarificationSchema.safeParse(req.body);
+      // Parse JSON body fields if they come as strings (from FormData)
+      let bodyData = req.body;
+      if (typeof req.body.departmentContacts === 'string') {
+        try {
+          bodyData = {
+            ...req.body,
+            departmentContacts: JSON.parse(req.body.departmentContacts),
+            tenderId: req.body.tenderId ? parseInt(req.body.tenderId) : null,
+            assignedTo: parseInt(req.body.assignedTo),
+          };
+        } catch (e) {
+          bodyData = req.body;
+        }
+      }
+      
+      const validationResult = createClarificationSchema.safeParse(bodyData);
       if (!validationResult.success) {
         return res.status(400).json({ 
           message: "Validation failed", 
@@ -2339,6 +2372,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         createdBy,
         submitDeadlineDate: data.submitDeadlineDate ? new Date(data.submitDeadlineDate) : null,
         submitDeadlineTime: data.submitDeadlineTime || null,
+        documentFile: file ? file.path : null,
       });
 
       // Log the action
