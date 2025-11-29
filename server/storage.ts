@@ -1025,7 +1025,7 @@ export class DatabaseStorage implements IStorage {
   async searchTenderReferences(query: string): Promise<{ referenceId: string; title?: string; tenderId?: number }[]> {
     if (!query || query.length < 2) return [];
     
-    // Search in existing tenders by t247Id
+    // Search in existing tenders by t247Id OR title
     const matchingTenders = await db
       .select({
         referenceId: tenders.t247Id,
@@ -1033,8 +1033,11 @@ export class DatabaseStorage implements IStorage {
         tenderId: tenders.id,
       })
       .from(tenders)
-      .where(sql`${tenders.t247Id} ILIKE ${'%' + query + '%'}`)
-      .limit(10);
+      .where(or(
+        sql`${tenders.t247Id} ILIKE ${'%' + query + '%'}`,
+        sql`${tenders.title} ILIKE ${'%' + query + '%'}`
+      ))
+      .limit(15);
     
     return matchingTenders.map(t => ({
       referenceId: t.referenceId,

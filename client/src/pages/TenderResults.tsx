@@ -193,6 +193,11 @@ function AddResultDialog({
 
   const { data: searchResults = [], isLoading: isSearching } = useQuery<TenderReference[]>({
     queryKey: ['/api/tender-references/search', searchQuery],
+    queryFn: async () => {
+      const response = await fetch(`/api/tender-references/search?q=${encodeURIComponent(searchQuery)}`);
+      if (!response.ok) throw new Error('Failed to search');
+      return response.json();
+    },
     enabled: searchQuery.length >= 2,
   });
 
