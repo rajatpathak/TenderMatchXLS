@@ -104,6 +104,13 @@ interface IndividualReport {
     reviewed: number;
     clarifications: number;
     presentations: number;
+    notRelevantIds?: string[];
+    notEligibleIds?: string[];
+    assignedIds?: string[];
+    submittedIds?: string[];
+    reviewedIds?: string[];
+    clarificationIds?: string[];
+    presentationIds?: string[];
   }[];
 }
 
@@ -746,13 +753,76 @@ export default function MISReportsPage() {
                         {myReport.dailyBreakdown.map((day, index) => (
                           <TableRow key={day.date} data-testid={`row-daily-${index}`}>
                             <TableCell className="font-medium">{format(new Date(day.date), 'MMM d, yyyy')}</TableCell>
-                            <TableCell className="text-center">{day.notRelevant}</TableCell>
-                            <TableCell className="text-center">{day.notEligible}</TableCell>
-                            <TableCell className="text-center">{day.assigned}</TableCell>
-                            <TableCell className="text-center">{day.submitted}</TableCell>
-                            <TableCell className="text-center">{day.reviewed}</TableCell>
-                            <TableCell className="text-center">{day.clarifications}</TableCell>
-                            <TableCell className="text-center">{day.presentations}</TableCell>
+                            <TableCell className="text-center">
+                              {day.notRelevant > 0 && day.notRelevantIds && day.notRelevantIds.length > 0 ? (
+                                <div className="flex flex-col items-center">
+                                  <span className="font-medium">{day.notRelevant}</span>
+                                  <span className="text-xs text-muted-foreground truncate max-w-[120px]" title={day.notRelevantIds.join(', ')}>
+                                    {day.notRelevantIds.slice(0, 2).join(', ')}{day.notRelevantIds.length > 2 ? '...' : ''}
+                                  </span>
+                                </div>
+                              ) : day.notRelevant}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {day.notEligible > 0 && day.notEligibleIds && day.notEligibleIds.length > 0 ? (
+                                <div className="flex flex-col items-center">
+                                  <span className="font-medium">{day.notEligible}</span>
+                                  <span className="text-xs text-muted-foreground truncate max-w-[120px]" title={day.notEligibleIds.join(', ')}>
+                                    {day.notEligibleIds.slice(0, 2).join(', ')}{day.notEligibleIds.length > 2 ? '...' : ''}
+                                  </span>
+                                </div>
+                              ) : day.notEligible}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {day.assigned > 0 && day.assignedIds && day.assignedIds.length > 0 ? (
+                                <div className="flex flex-col items-center">
+                                  <span className="font-medium">{day.assigned}</span>
+                                  <span className="text-xs text-muted-foreground truncate max-w-[120px]" title={day.assignedIds.join(', ')}>
+                                    {day.assignedIds.slice(0, 2).join(', ')}{day.assignedIds.length > 2 ? '...' : ''}
+                                  </span>
+                                </div>
+                              ) : day.assigned}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {day.submitted > 0 && day.submittedIds && day.submittedIds.length > 0 ? (
+                                <div className="flex flex-col items-center">
+                                  <span className="font-medium">{day.submitted}</span>
+                                  <span className="text-xs text-muted-foreground truncate max-w-[120px]" title={day.submittedIds.join(', ')}>
+                                    {day.submittedIds.slice(0, 2).join(', ')}{day.submittedIds.length > 2 ? '...' : ''}
+                                  </span>
+                                </div>
+                              ) : day.submitted}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {day.reviewed > 0 && day.reviewedIds && day.reviewedIds.length > 0 ? (
+                                <div className="flex flex-col items-center">
+                                  <span className="font-medium">{day.reviewed}</span>
+                                  <span className="text-xs text-muted-foreground truncate max-w-[120px]" title={day.reviewedIds.join(', ')}>
+                                    {day.reviewedIds.slice(0, 2).join(', ')}{day.reviewedIds.length > 2 ? '...' : ''}
+                                  </span>
+                                </div>
+                              ) : day.reviewed}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {day.clarifications > 0 && day.clarificationIds && day.clarificationIds.length > 0 ? (
+                                <div className="flex flex-col items-center">
+                                  <span className="font-medium">{day.clarifications}</span>
+                                  <span className="text-xs text-muted-foreground truncate max-w-[120px]" title={day.clarificationIds.join(', ')}>
+                                    {day.clarificationIds.slice(0, 2).join(', ')}{day.clarificationIds.length > 2 ? '...' : ''}
+                                  </span>
+                                </div>
+                              ) : day.clarifications}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {day.presentations > 0 && day.presentationIds && day.presentationIds.length > 0 ? (
+                                <div className="flex flex-col items-center">
+                                  <span className="font-medium">{day.presentations}</span>
+                                  <span className="text-xs text-muted-foreground truncate max-w-[120px]" title={day.presentationIds.join(', ')}>
+                                    {day.presentationIds.slice(0, 2).join(', ')}{day.presentationIds.length > 2 ? '...' : ''}
+                                  </span>
+                                </div>
+                              ) : day.presentations}
+                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -918,7 +988,7 @@ export default function MISReportsPage() {
 
                 <Card>
                   <CardHeader>
-                    <CardTitle>Daily Breakdown for {selectedMemberReport.teamMember.fullName}</CardTitle>
+                    <CardTitle>Daily Breakdown for {selectedMemberReport.teamMember?.fullName}</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <ScrollArea className="h-[300px]">
@@ -939,13 +1009,76 @@ export default function MISReportsPage() {
                           {selectedMemberReport.dailyBreakdown.map((day, index) => (
                             <TableRow key={day.date}>
                               <TableCell className="font-medium">{format(new Date(day.date), 'MMM d, yyyy')}</TableCell>
-                              <TableCell className="text-center">{day.notRelevant}</TableCell>
-                              <TableCell className="text-center">{day.notEligible}</TableCell>
-                              <TableCell className="text-center">{day.assigned}</TableCell>
-                              <TableCell className="text-center">{day.submitted}</TableCell>
-                              <TableCell className="text-center">{day.reviewed}</TableCell>
-                              <TableCell className="text-center">{day.clarifications}</TableCell>
-                              <TableCell className="text-center">{day.presentations}</TableCell>
+                              <TableCell className="text-center">
+                                {day.notRelevant > 0 && day.notRelevantIds && day.notRelevantIds.length > 0 ? (
+                                  <div className="flex flex-col items-center">
+                                    <span className="font-medium">{day.notRelevant}</span>
+                                    <span className="text-xs text-muted-foreground truncate max-w-[120px]" title={day.notRelevantIds.join(', ')}>
+                                      {day.notRelevantIds.slice(0, 2).join(', ')}{day.notRelevantIds.length > 2 ? '...' : ''}
+                                    </span>
+                                  </div>
+                                ) : day.notRelevant}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {day.notEligible > 0 && day.notEligibleIds && day.notEligibleIds.length > 0 ? (
+                                  <div className="flex flex-col items-center">
+                                    <span className="font-medium">{day.notEligible}</span>
+                                    <span className="text-xs text-muted-foreground truncate max-w-[120px]" title={day.notEligibleIds.join(', ')}>
+                                      {day.notEligibleIds.slice(0, 2).join(', ')}{day.notEligibleIds.length > 2 ? '...' : ''}
+                                    </span>
+                                  </div>
+                                ) : day.notEligible}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {day.assigned > 0 && day.assignedIds && day.assignedIds.length > 0 ? (
+                                  <div className="flex flex-col items-center">
+                                    <span className="font-medium">{day.assigned}</span>
+                                    <span className="text-xs text-muted-foreground truncate max-w-[120px]" title={day.assignedIds.join(', ')}>
+                                      {day.assignedIds.slice(0, 2).join(', ')}{day.assignedIds.length > 2 ? '...' : ''}
+                                    </span>
+                                  </div>
+                                ) : day.assigned}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {day.submitted > 0 && day.submittedIds && day.submittedIds.length > 0 ? (
+                                  <div className="flex flex-col items-center">
+                                    <span className="font-medium">{day.submitted}</span>
+                                    <span className="text-xs text-muted-foreground truncate max-w-[120px]" title={day.submittedIds.join(', ')}>
+                                      {day.submittedIds.slice(0, 2).join(', ')}{day.submittedIds.length > 2 ? '...' : ''}
+                                    </span>
+                                  </div>
+                                ) : day.submitted}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {day.reviewed > 0 && day.reviewedIds && day.reviewedIds.length > 0 ? (
+                                  <div className="flex flex-col items-center">
+                                    <span className="font-medium">{day.reviewed}</span>
+                                    <span className="text-xs text-muted-foreground truncate max-w-[120px]" title={day.reviewedIds.join(', ')}>
+                                      {day.reviewedIds.slice(0, 2).join(', ')}{day.reviewedIds.length > 2 ? '...' : ''}
+                                    </span>
+                                  </div>
+                                ) : day.reviewed}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {day.clarifications > 0 && day.clarificationIds && day.clarificationIds.length > 0 ? (
+                                  <div className="flex flex-col items-center">
+                                    <span className="font-medium">{day.clarifications}</span>
+                                    <span className="text-xs text-muted-foreground truncate max-w-[120px]" title={day.clarificationIds.join(', ')}>
+                                      {day.clarificationIds.slice(0, 2).join(', ')}{day.clarificationIds.length > 2 ? '...' : ''}
+                                    </span>
+                                  </div>
+                                ) : day.clarifications}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {day.presentations > 0 && day.presentationIds && day.presentationIds.length > 0 ? (
+                                  <div className="flex flex-col items-center">
+                                    <span className="font-medium">{day.presentations}</span>
+                                    <span className="text-xs text-muted-foreground truncate max-w-[120px]" title={day.presentationIds.join(', ')}>
+                                      {day.presentationIds.slice(0, 2).join(', ')}{day.presentationIds.length > 2 ? '...' : ''}
+                                    </span>
+                                  </div>
+                                ) : day.presentations}
+                              </TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
