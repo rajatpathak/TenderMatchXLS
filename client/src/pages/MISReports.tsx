@@ -42,7 +42,13 @@ import {
   Loader2,
   ArrowUpRight,
   ArrowDownRight,
+  Award,
+  Target,
+  Percent,
+  FileText,
 } from "lucide-react";
+import jsPDF from "jspdf";
+import "jspdf-autotable";
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns";
 import {
   BarChart,
@@ -76,6 +82,11 @@ interface MemberReport {
     presentationsScheduled: number;
     presentationsCompleted: number;
     resultsRecorded: number;
+    resultsL1: number;
+    resultsAwarded: number;
+    resultsLost: number;
+    resultsCancelled: number;
+    winRatio: number;
     totalActions: number;
   };
 }
@@ -94,6 +105,11 @@ interface IndividualReport {
     presentationsScheduled: number;
     presentationsCompleted: number;
     resultsRecorded: number;
+    resultsL1: number;
+    resultsAwarded: number;
+    resultsLost: number;
+    resultsCancelled: number;
+    winRatio: number;
   };
   dailyBreakdown: {
     date: string;
@@ -104,6 +120,8 @@ interface IndividualReport {
     reviewed: number;
     clarifications: number;
     presentations: number;
+    l1: number;
+    awarded: number;
     notRelevantIds?: string[];
     notEligibleIds?: string[];
     assignedIds?: string[];
@@ -111,6 +129,8 @@ interface IndividualReport {
     reviewedIds?: string[];
     clarificationIds?: string[];
     presentationIds?: string[];
+    l1Ids?: string[];
+    awardedIds?: string[];
   }[];
 }
 
@@ -231,6 +251,177 @@ export default function MISReportsPage() {
     }
   };
 
+  const handlePDFDownload = () => {
+    const report = myReport;
+    if (!report) {
+      toast({ title: "No report data available", variant: "destructive" });
+      return;
+    }
+
+    const doc = new jsPDF();
+    const userName = report.teamMember?.fullName || report.user?.username || 'Unknown';
+    
+    doc.setFontSize(20);
+    doc.setFont('helvetica', 'bold');
+    doc.text('MIS Report', 105, 20, { align: 'center' });
+    
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`User: ${userName}`, 14, 35);
+    doc.text(`Period: ${format(new Date(startDate), 'MMM d, yyyy')} - ${format(new Date(endDate), 'MMM d, yyyy')}`, 14, 42);
+    doc.text(`Generated: ${format(new Date(), 'MMM d, yyyy HH:mm')}`, 14, 49);
+    
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Summary', 14, 62);
+    
+    const summaryData = [
+      ['Metric', 'Count'],
+      ['Not Relevant', String(report.summary.tendersMarkedNotRelevant)],
+      ['Not Eligible', String(report.summary.tendersMarkedNotEligible)],
+      ['Assigned', String(report.summary.tendersAssigned)],
+      ['Submitted', String(report.summary.tendersSubmitted)],
+      ['Reviewed', String(report.summary.tendersReviewed)],
+      ['Clarifications Created', String(report.summary.clarificationsCreated)],
+      ['Clarifications Submitted', String(report.summary.clarificationsSubmitted)],
+      ['Presentations Scheduled', String(report.summary.presentationsScheduled)],
+      ['Presentations Completed', String(report.summary.presentationsCompleted)],
+      ['Results Recorded', String(report.summary.resultsRecorded)],
+      ['L1', String(report.summary.resultsL1 || 0)],
+      ['Awarded', String(report.summary.resultsAwarded || 0)],
+      ['Lost', String(report.summary.resultsLost || 0)],
+      ['Cancelled', String(report.summary.resultsCancelled || 0)],
+      ['Win Ratio', `${report.summary.winRatio || 0}%`],
+    ];
+    
+    (doc as any).autoTable({
+      startY: 68,
+      head: [summaryData[0]],
+      body: summaryData.slice(1),
+      theme: 'striped',
+      headStyles: { fillColor: [59, 130, 246] },
+      columnStyles: {
+        0: { cellWidth: 80 },
+        1: { cellWidth: 40, halign: 'center' },
+      },
+    });
+    
+    const finalY1 = (doc as any).lastAutoTable?.finalY || 180;
+    
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Daily Breakdown', 14, finalY1 + 15);
+    
+    const dailyHeaders = ['Date', 'Not Rel.', 'Not Elig.', 'Assigned', 'Submitted', 'Reviewed', 'Clarif.', 'Pres.', 'L1', 'Awarded'];
+    const dailyRows = report.dailyBreakdown.map(day => [
+      format(new Date(day.date), 'MMM d'),
+      String(day.notRelevant),
+      String(day.notEligible),
+      String(day.assigned),
+      String(day.submitted),
+      String(day.reviewed),
+      String(day.clarifications),
+      String(day.presentations),
+      String(day.l1 || 0),
+      String(day.awarded || 0),
+    ]);
+    
+    (doc as any).autoTable({
+      startY: finalY1 + 20,
+      head: [dailyHeaders],
+      body: dailyRows,
+      theme: 'striped',
+      headStyles: { fillColor: [59, 130, 246], fontSize: 8 },
+      bodyStyles: { fontSize: 8 },
+      columnStyles: {
+        0: { cellWidth: 25 },
+        1: { cellWidth: 18, halign: 'center' },
+        2: { cellWidth: 18, halign: 'center' },
+        3: { cellWidth: 20, halign: 'center' },
+        4: { cellWidth: 20, halign: 'center' },
+        5: { cellWidth: 20, halign: 'center' },
+        6: { cellWidth: 18, halign: 'center' },
+        7: { cellWidth: 16, halign: 'center' },
+        8: { cellWidth: 16, halign: 'center' },
+        9: { cellWidth: 20, halign: 'center' },
+      },
+    });
+    
+    const finalY2 = (doc as any).lastAutoTable?.finalY || 250;
+    
+    if (report.dailyBreakdown.some(d => 
+      (d.notRelevantIds?.length || 0) > 0 || 
+      (d.assignedIds?.length || 0) > 0 || 
+      (d.submittedIds?.length || 0) > 0 ||
+      (d.l1Ids?.length || 0) > 0 ||
+      (d.awardedIds?.length || 0) > 0
+    )) {
+      if (finalY2 > 250) {
+        doc.addPage();
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Tender IDs by Activity', 14, 20);
+        
+        let yPos = 30;
+        for (const day of report.dailyBreakdown) {
+          const hasIds = (day.notRelevantIds?.length || 0) > 0 || 
+                        (day.assignedIds?.length || 0) > 0 || 
+                        (day.submittedIds?.length || 0) > 0 ||
+                        (day.l1Ids?.length || 0) > 0 ||
+                        (day.awardedIds?.length || 0) > 0;
+          
+          if (hasIds) {
+            if (yPos > 270) {
+              doc.addPage();
+              yPos = 20;
+            }
+            
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'bold');
+            doc.text(format(new Date(day.date), 'MMM d, yyyy'), 14, yPos);
+            yPos += 6;
+            
+            doc.setFontSize(8);
+            doc.setFont('helvetica', 'normal');
+            
+            if (day.notRelevantIds?.length) {
+              doc.text(`  Not Relevant: ${day.notRelevantIds.join(', ')}`, 14, yPos);
+              yPos += 5;
+            }
+            if (day.notEligibleIds?.length) {
+              doc.text(`  Not Eligible: ${day.notEligibleIds.join(', ')}`, 14, yPos);
+              yPos += 5;
+            }
+            if (day.assignedIds?.length) {
+              doc.text(`  Assigned: ${day.assignedIds.join(', ')}`, 14, yPos);
+              yPos += 5;
+            }
+            if (day.submittedIds?.length) {
+              doc.text(`  Submitted: ${day.submittedIds.join(', ')}`, 14, yPos);
+              yPos += 5;
+            }
+            if (day.reviewedIds?.length) {
+              doc.text(`  Reviewed: ${day.reviewedIds.join(', ')}`, 14, yPos);
+              yPos += 5;
+            }
+            if (day.l1Ids?.length) {
+              doc.text(`  L1: ${day.l1Ids.join(', ')}`, 14, yPos);
+              yPos += 5;
+            }
+            if (day.awardedIds?.length) {
+              doc.text(`  Awarded: ${day.awardedIds.join(', ')}`, 14, yPos);
+              yPos += 5;
+            }
+            yPos += 3;
+          }
+        }
+      }
+    }
+    
+    doc.save(`MIS_Report_${userName.replace(/\s+/g, '_')}_${startDate}_${endDate}.pdf`);
+    toast({ title: "PDF report downloaded successfully" });
+  };
+
   const chartData = useMemo(() => {
     if (!allTeamReports) return [];
     return allTeamReports.map(r => ({
@@ -335,7 +526,17 @@ export default function MISReportsPage() {
             data-testid="button-download-my-report"
           >
             {isDownloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
-            My Report
+            CSV
+          </Button>
+          
+          <Button 
+            variant="outline" 
+            onClick={handlePDFDownload}
+            disabled={!myReport}
+            data-testid="button-download-pdf-report"
+          >
+            <FileText className="w-4 h-4 mr-2" />
+            PDF
           </Button>
           
           {isAdmin && (
@@ -496,14 +697,17 @@ export default function MISReportsPage() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Member</TableHead>
-                        <TableHead className="text-center">Not Relevant</TableHead>
-                        <TableHead className="text-center">Not Eligible</TableHead>
+                        <TableHead className="text-center">Not Rel.</TableHead>
+                        <TableHead className="text-center">Not Elig.</TableHead>
                         <TableHead className="text-center">Assigned</TableHead>
                         <TableHead className="text-center">Submitted</TableHead>
                         <TableHead className="text-center">Reviewed</TableHead>
-                        <TableHead className="text-center">Clarifications</TableHead>
-                        <TableHead className="text-center">Presentations</TableHead>
+                        <TableHead className="text-center">Clarif.</TableHead>
+                        <TableHead className="text-center">Pres.</TableHead>
                         <TableHead className="text-center">Results</TableHead>
+                        <TableHead className="text-center">L1</TableHead>
+                        <TableHead className="text-center">Awarded</TableHead>
+                        <TableHead className="text-center">Win %</TableHead>
                         <TableHead className="text-right font-bold">Total</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -511,7 +715,7 @@ export default function MISReportsPage() {
                       {isLoadingAll ? (
                         Array(5).fill(0).map((_, i) => (
                           <TableRow key={i}>
-                            {Array(10).fill(0).map((_, j) => (
+                            {Array(13).fill(0).map((_, j) => (
                               <TableCell key={j}><Skeleton className="h-4 w-12" /></TableCell>
                             ))}
                           </TableRow>
@@ -528,6 +732,9 @@ export default function MISReportsPage() {
                             <TableCell className="text-center">{r.summary.clarificationsCreated}</TableCell>
                             <TableCell className="text-center">{r.summary.presentationsScheduled}</TableCell>
                             <TableCell className="text-center">{r.summary.resultsRecorded}</TableCell>
+                            <TableCell className="text-center">{r.summary.resultsL1 || 0}</TableCell>
+                            <TableCell className="text-center">{r.summary.resultsAwarded || 0}</TableCell>
+                            <TableCell className="text-center">{r.summary.winRatio || 0}%</TableCell>
                             <TableCell className="text-right font-bold">{r.summary.totalActions}</TableCell>
                           </TableRow>
                         ))
@@ -664,6 +871,50 @@ export default function MISReportsPage() {
                     </div>
                   </CardContent>
                 </Card>
+                <Card data-testid="card-my-l1">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-muted-foreground">L1</p>
+                        <p className="text-xl font-bold">{myReport.summary.resultsL1 || 0}</p>
+                      </div>
+                      <Target className="w-6 h-6 text-blue-600" />
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card data-testid="card-my-awarded">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Awarded</p>
+                        <p className="text-xl font-bold">{myReport.summary.resultsAwarded || 0}</p>
+                      </div>
+                      <Award className="w-6 h-6 text-green-600" />
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card data-testid="card-my-lost">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Lost</p>
+                        <p className="text-xl font-bold">{myReport.summary.resultsLost || 0}</p>
+                      </div>
+                      <XCircle className="w-6 h-6 text-red-600" />
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card data-testid="card-my-win-ratio">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Win Ratio</p>
+                        <p className="text-xl font-bold">{myReport.summary.winRatio || 0}%</p>
+                      </div>
+                      <Percent className="w-6 h-6 text-emerald-500" />
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -747,6 +998,8 @@ export default function MISReportsPage() {
                           <TableHead className="text-center">Reviewed</TableHead>
                           <TableHead className="text-center">Clarifications</TableHead>
                           <TableHead className="text-center">Presentations</TableHead>
+                          <TableHead className="text-center">L1</TableHead>
+                          <TableHead className="text-center">Awarded</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -822,6 +1075,26 @@ export default function MISReportsPage() {
                                   </span>
                                 </div>
                               ) : day.presentations}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {(day.l1 || 0) > 0 && day.l1Ids && day.l1Ids.length > 0 ? (
+                                <div className="flex flex-col items-center">
+                                  <span className="font-medium">{day.l1}</span>
+                                  <span className="text-xs text-muted-foreground truncate max-w-[120px]" title={day.l1Ids.join(', ')}>
+                                    {day.l1Ids.slice(0, 2).join(', ')}{day.l1Ids.length > 2 ? '...' : ''}
+                                  </span>
+                                </div>
+                              ) : (day.l1 || 0)}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {(day.awarded || 0) > 0 && day.awardedIds && day.awardedIds.length > 0 ? (
+                                <div className="flex flex-col items-center">
+                                  <span className="font-medium">{day.awarded}</span>
+                                  <span className="text-xs text-muted-foreground truncate max-w-[120px]" title={day.awardedIds.join(', ')}>
+                                    {day.awardedIds.slice(0, 2).join(', ')}{day.awardedIds.length > 2 ? '...' : ''}
+                                  </span>
+                                </div>
+                              ) : (day.awarded || 0)}
                             </TableCell>
                           </TableRow>
                         ))}

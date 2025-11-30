@@ -215,6 +215,11 @@ export interface IStorage {
       presentationsScheduled: number;
       presentationsCompleted: number;
       resultsRecorded: number;
+      resultsL1: number;
+      resultsAwarded: number;
+      resultsLost: number;
+      resultsCancelled: number;
+      winRatio: number;
     };
     dailyBreakdown: {
       date: string;
@@ -225,6 +230,8 @@ export interface IStorage {
       reviewed: number;
       clarifications: number;
       presentations: number;
+      l1: number;
+      awarded: number;
       notRelevantIds: string[];
       notEligibleIds: string[];
       assignedIds: string[];
@@ -232,6 +239,8 @@ export interface IStorage {
       reviewedIds: string[];
       clarificationIds: string[];
       presentationIds: string[];
+      l1Ids: string[];
+      awardedIds: string[];
     }[];
   }>;
   
@@ -250,6 +259,11 @@ export interface IStorage {
       presentationsScheduled: number;
       presentationsCompleted: number;
       resultsRecorded: number;
+      resultsL1: number;
+      resultsAwarded: number;
+      resultsLost: number;
+      resultsCancelled: number;
+      winRatio: number;
       totalActions: number;
     };
   }[]>;
@@ -267,6 +281,11 @@ export interface IStorage {
       presentationsScheduled: number;
       presentationsCompleted: number;
       resultsRecorded: number;
+      resultsL1: number;
+      resultsAwarded: number;
+      resultsLost: number;
+      resultsCancelled: number;
+      winRatio: number;
     };
     dailyBreakdown: {
       date: string;
@@ -277,6 +296,8 @@ export interface IStorage {
       reviewed: number;
       clarifications: number;
       presentations: number;
+      l1: number;
+      awarded: number;
       notRelevantIds: string[];
       notEligibleIds: string[];
       assignedIds: string[];
@@ -284,6 +305,8 @@ export interface IStorage {
       reviewedIds: string[];
       clarificationIds: string[];
       presentationIds: string[];
+      l1Ids: string[];
+      awardedIds: string[];
     }[];
   }>;
 }
@@ -1599,6 +1622,11 @@ export class DatabaseStorage implements IStorage {
       presentationsScheduled: number;
       presentationsCompleted: number;
       resultsRecorded: number;
+      resultsL1: number;
+      resultsAwarded: number;
+      resultsLost: number;
+      resultsCancelled: number;
+      winRatio: number;
     };
     dailyBreakdown: {
       date: string;
@@ -1609,6 +1637,8 @@ export class DatabaseStorage implements IStorage {
       reviewed: number;
       clarifications: number;
       presentations: number;
+      l1: number;
+      awarded: number;
       notRelevantIds: string[];
       notEligibleIds: string[];
       assignedIds: string[];
@@ -1616,6 +1646,8 @@ export class DatabaseStorage implements IStorage {
       reviewedIds: string[];
       clarificationIds: string[];
       presentationIds: string[];
+      l1Ids: string[];
+      awardedIds: string[];
     }[];
   }> {
     const [teamMember] = await db.select().from(teamMembers).where(eq(teamMembers.id, teamMemberId));
@@ -1671,6 +1703,12 @@ export class DatabaseStorage implements IStorage {
     
     // Get results recorded
     const resultsLogs = logs.filter(l => l.action === 'create' && l.category === 'tender_result');
+    
+    // Get result status logs (L1, Awarded, etc.)
+    const l1Logs = logs.filter(l => l.category === 'tender_result' && l.details?.includes('"l1"'));
+    const awardedLogs = logs.filter(l => l.category === 'tender_result' && l.details?.includes('"awarded"'));
+    const lostLogs = logs.filter(l => l.category === 'tender_result' && (l.details?.includes('"technically_rejected"') || l.details?.includes('"financially_rejected"')));
+    const cancelledLogs = logs.filter(l => l.category === 'tender_result' && l.details?.includes('"cancelled"'));
 
     // Also get direct counts from tables
     const assignmentsAssigned = await db
@@ -1717,6 +1755,50 @@ export class DatabaseStorage implements IStorage {
         gte(tenderResults.createdAt, startDate),
         lt(tenderResults.createdAt, endDate)
       ));
+    
+    // Get results by status for this team member
+    const resultsL1Count = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(tenderResults)
+      .where(and(
+        eq(tenderResults.updatedBy, teamMemberId),
+        eq(tenderResults.currentStatus, 'l1'),
+        gte(tenderResults.updatedAt, startDate),
+        lt(tenderResults.updatedAt, endDate)
+      ));
+    
+    const resultsAwardedCount = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(tenderResults)
+      .where(and(
+        eq(tenderResults.updatedBy, teamMemberId),
+        eq(tenderResults.currentStatus, 'awarded'),
+        gte(tenderResults.updatedAt, startDate),
+        lt(tenderResults.updatedAt, endDate)
+      ));
+    
+    const resultsLostCount = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(tenderResults)
+      .where(and(
+        eq(tenderResults.updatedBy, teamMemberId),
+        sql`${tenderResults.currentStatus} IN ('technically_rejected', 'financially_rejected')`,
+        gte(tenderResults.updatedAt, startDate),
+        lt(tenderResults.updatedAt, endDate)
+      ));
+    
+    const resultsCancelledCount = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(tenderResults)
+      .where(and(
+        eq(tenderResults.updatedBy, teamMemberId),
+        eq(tenderResults.currentStatus, 'cancelled'),
+        gte(tenderResults.updatedAt, startDate),
+        lt(tenderResults.updatedAt, endDate)
+      ));
+    
+    const totalResults = Number(resultsAwardedCount[0]?.count || 0) + Number(resultsLostCount[0]?.count || 0);
+    const winRatio = totalResults > 0 ? Math.round((Number(resultsAwardedCount[0]?.count || 0) / totalResults) * 100) : 0;
 
     // Build daily breakdown with tender IDs
     const dailyBreakdown: {
@@ -1728,6 +1810,8 @@ export class DatabaseStorage implements IStorage {
       reviewed: number;
       clarifications: number;
       presentations: number;
+      l1: number;
+      awarded: number;
       notRelevantIds: string[];
       notEligibleIds: string[];
       assignedIds: string[];
@@ -1735,6 +1819,8 @@ export class DatabaseStorage implements IStorage {
       reviewedIds: string[];
       clarificationIds: string[];
       presentationIds: string[];
+      l1Ids: string[];
+      awardedIds: string[];
     }[] = [];
 
     // Generate dates in range
@@ -1756,6 +1842,8 @@ export class DatabaseStorage implements IStorage {
       const reviewedLogs = dayLogs.filter(l => l.action === 'review' || (l.action === 'stage_change' && l.details?.includes('ready_for_review')));
       const clarificationLogs = dayLogs.filter(l => l.category === 'clarification');
       const presentationLogs = dayLogs.filter(l => l.category === 'presentation');
+      const dayL1Logs = dayLogs.filter(l => l.category === 'tender_result' && l.details?.includes('"l1"'));
+      const dayAwardedLogs = dayLogs.filter(l => l.category === 'tender_result' && l.details?.includes('"awarded"'));
 
       dailyBreakdown.push({
         date: dateStr,
@@ -1766,6 +1854,8 @@ export class DatabaseStorage implements IStorage {
         reviewed: reviewedLogs.length,
         clarifications: clarificationLogs.length,
         presentations: presentationLogs.length,
+        l1: dayL1Logs.length,
+        awarded: dayAwardedLogs.length,
         notRelevantIds: notRelevantLogs.map(extractTenderId).filter(Boolean),
         notEligibleIds: notEligibleLogs.map(extractTenderId).filter(Boolean),
         assignedIds: assignedLogs.map(extractTenderId).filter(Boolean),
@@ -1773,6 +1863,8 @@ export class DatabaseStorage implements IStorage {
         reviewedIds: reviewedLogs.map(extractTenderId).filter(Boolean),
         clarificationIds: clarificationLogs.map(extractTenderId).filter(Boolean),
         presentationIds: presentationLogs.map(extractTenderId).filter(Boolean),
+        l1Ids: dayL1Logs.map(extractTenderId).filter(Boolean),
+        awardedIds: dayAwardedLogs.map(extractTenderId).filter(Boolean),
       });
 
       currentDate.setDate(currentDate.getDate() + 1);
@@ -1791,6 +1883,11 @@ export class DatabaseStorage implements IStorage {
         presentationsScheduled: Number(presentationsCreatedCount[0]?.count || 0),
         presentationsCompleted: presentationCompletedLogs.length,
         resultsRecorded: Number(resultsCreatedCount[0]?.count || 0),
+        resultsL1: Number(resultsL1Count[0]?.count || 0),
+        resultsAwarded: Number(resultsAwardedCount[0]?.count || 0),
+        resultsLost: Number(resultsLostCount[0]?.count || 0),
+        resultsCancelled: Number(resultsCancelledCount[0]?.count || 0),
+        winRatio,
       },
       dailyBreakdown,
     };
@@ -1811,6 +1908,11 @@ export class DatabaseStorage implements IStorage {
       presentationsScheduled: number;
       presentationsCompleted: number;
       resultsRecorded: number;
+      resultsL1: number;
+      resultsAwarded: number;
+      resultsLost: number;
+      resultsCancelled: number;
+      winRatio: number;
       totalActions: number;
     };
   }[]> {
@@ -1857,6 +1959,11 @@ export class DatabaseStorage implements IStorage {
               presentationsScheduled: 0,
               presentationsCompleted: 0,
               resultsRecorded: 0,
+              resultsL1: 0,
+              resultsAwarded: 0,
+              resultsLost: 0,
+              resultsCancelled: 0,
+              winRatio: 0,
               totalActions: 0,
             },
           };
@@ -1881,6 +1988,11 @@ export class DatabaseStorage implements IStorage {
       presentationsScheduled: number;
       presentationsCompleted: number;
       resultsRecorded: number;
+      resultsL1: number;
+      resultsAwarded: number;
+      resultsLost: number;
+      resultsCancelled: number;
+      winRatio: number;
     };
     dailyBreakdown: {
       date: string;
@@ -1891,6 +2003,8 @@ export class DatabaseStorage implements IStorage {
       reviewed: number;
       clarifications: number;
       presentations: number;
+      l1: number;
+      awarded: number;
       notRelevantIds: string[];
       notEligibleIds: string[];
       assignedIds: string[];
@@ -1898,6 +2012,8 @@ export class DatabaseStorage implements IStorage {
       reviewedIds: string[];
       clarificationIds: string[];
       presentationIds: string[];
+      l1Ids: string[];
+      awardedIds: string[];
     }[];
   }> {
     // Get all audit logs for this user within date range
@@ -1948,6 +2064,15 @@ export class DatabaseStorage implements IStorage {
     
     // Get results recorded
     const resultsLogs = logs.filter(l => l.action === 'create' && l.category === 'tender_result');
+    
+    // Get result status logs (L1, Awarded, etc.)
+    const l1Logs = logs.filter(l => l.category === 'tender_result' && l.details?.includes('"l1"'));
+    const awardedLogs = logs.filter(l => l.category === 'tender_result' && l.details?.includes('"awarded"'));
+    const lostLogs = logs.filter(l => l.category === 'tender_result' && (l.details?.includes('"technically_rejected"') || l.details?.includes('"financially_rejected"')));
+    const cancelledLogs = logs.filter(l => l.category === 'tender_result' && l.details?.includes('"cancelled"'));
+    
+    const totalResults = awardedLogs.length + lostLogs.length;
+    const winRatio = totalResults > 0 ? Math.round((awardedLogs.length / totalResults) * 100) : 0;
 
     // Build daily breakdown with tender IDs
     const dailyBreakdown: {
@@ -1959,6 +2084,8 @@ export class DatabaseStorage implements IStorage {
       reviewed: number;
       clarifications: number;
       presentations: number;
+      l1: number;
+      awarded: number;
       notRelevantIds: string[];
       notEligibleIds: string[];
       assignedIds: string[];
@@ -1966,6 +2093,8 @@ export class DatabaseStorage implements IStorage {
       reviewedIds: string[];
       clarificationIds: string[];
       presentationIds: string[];
+      l1Ids: string[];
+      awardedIds: string[];
     }[] = [];
 
     // Generate dates in range
@@ -1980,30 +2109,36 @@ export class DatabaseStorage implements IStorage {
         return logDate >= currentDate && logDate < nextDate;
       });
 
-      const notRelevantLogs = dayLogs.filter(l => l.action === 'override' && l.details?.includes('not_relevant'));
-      const notEligibleLogs = dayLogs.filter(l => l.action === 'override' && l.details?.includes('not_eligible'));
-      const assignedLogs = dayLogs.filter(l => (l.action === 'assign' || l.action === 'create') && l.category === 'assignment');
-      const submittedLogs = dayLogs.filter(l => l.action === 'submit' || (l.action === 'stage_change' && l.details?.includes('submitted')));
-      const reviewedLogs = dayLogs.filter(l => l.action === 'review' || (l.action === 'stage_change' && l.details?.includes('ready_for_review')));
-      const clarificationLogs = dayLogs.filter(l => l.category === 'clarification');
-      const presentationLogs = dayLogs.filter(l => l.category === 'presentation');
+      const notRelevantLogDay = dayLogs.filter(l => l.action === 'override' && l.details?.includes('not_relevant'));
+      const notEligibleLogDay = dayLogs.filter(l => l.action === 'override' && l.details?.includes('not_eligible'));
+      const assignedLogDay = dayLogs.filter(l => (l.action === 'assign' || l.action === 'create') && l.category === 'assignment');
+      const submittedLogDay = dayLogs.filter(l => l.action === 'submit' || (l.action === 'stage_change' && l.details?.includes('submitted')));
+      const reviewedLogDay = dayLogs.filter(l => l.action === 'review' || (l.action === 'stage_change' && l.details?.includes('ready_for_review')));
+      const clarificationLogDay = dayLogs.filter(l => l.category === 'clarification');
+      const presentationLogDay = dayLogs.filter(l => l.category === 'presentation');
+      const dayL1Logs = dayLogs.filter(l => l.category === 'tender_result' && l.details?.includes('"l1"'));
+      const dayAwardedLogs = dayLogs.filter(l => l.category === 'tender_result' && l.details?.includes('"awarded"'));
 
       dailyBreakdown.push({
         date: dateStr,
-        notRelevant: notRelevantLogs.length,
-        notEligible: notEligibleLogs.length,
-        assigned: assignedLogs.length,
-        submitted: submittedLogs.length,
-        reviewed: reviewedLogs.length,
-        clarifications: clarificationLogs.length,
-        presentations: presentationLogs.length,
-        notRelevantIds: notRelevantLogs.map(extractTenderId).filter(Boolean),
-        notEligibleIds: notEligibleLogs.map(extractTenderId).filter(Boolean),
-        assignedIds: assignedLogs.map(extractTenderId).filter(Boolean),
-        submittedIds: submittedLogs.map(extractTenderId).filter(Boolean),
-        reviewedIds: reviewedLogs.map(extractTenderId).filter(Boolean),
-        clarificationIds: clarificationLogs.map(extractTenderId).filter(Boolean),
-        presentationIds: presentationLogs.map(extractTenderId).filter(Boolean),
+        notRelevant: notRelevantLogDay.length,
+        notEligible: notEligibleLogDay.length,
+        assigned: assignedLogDay.length,
+        submitted: submittedLogDay.length,
+        reviewed: reviewedLogDay.length,
+        clarifications: clarificationLogDay.length,
+        presentations: presentationLogDay.length,
+        l1: dayL1Logs.length,
+        awarded: dayAwardedLogs.length,
+        notRelevantIds: notRelevantLogDay.map(extractTenderId).filter(Boolean),
+        notEligibleIds: notEligibleLogDay.map(extractTenderId).filter(Boolean),
+        assignedIds: assignedLogDay.map(extractTenderId).filter(Boolean),
+        submittedIds: submittedLogDay.map(extractTenderId).filter(Boolean),
+        reviewedIds: reviewedLogDay.map(extractTenderId).filter(Boolean),
+        clarificationIds: clarificationLogDay.map(extractTenderId).filter(Boolean),
+        presentationIds: presentationLogDay.map(extractTenderId).filter(Boolean),
+        l1Ids: dayL1Logs.map(extractTenderId).filter(Boolean),
+        awardedIds: dayAwardedLogs.map(extractTenderId).filter(Boolean),
       });
 
       currentDate.setDate(currentDate.getDate() + 1);
@@ -2022,6 +2157,11 @@ export class DatabaseStorage implements IStorage {
         presentationsScheduled: presentationScheduledLogs.length,
         presentationsCompleted: presentationCompletedLogs.length,
         resultsRecorded: resultsLogs.length,
+        resultsL1: l1Logs.length,
+        resultsAwarded: awardedLogs.length,
+        resultsLost: lostLogs.length,
+        resultsCancelled: cancelledLogs.length,
+        winRatio,
       },
       dailyBreakdown,
     };

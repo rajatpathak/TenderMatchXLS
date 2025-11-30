@@ -72,9 +72,11 @@ TenderMatch is a web application for analyzing government tender eligibility wit
    - Date range selection (Today, Yesterday, Last 7 Days, This Week, Last 30 Days, This Month, Custom)
    - Team member activity tracking (tenders marked, assignments, submissions, reviews)
    - Clarifications and presentations tracking
-   - Daily breakdown charts and tables
-   - Team comparison view (admin/manager only)
+   - Daily breakdown charts and tables with tender ID details
+   - Result metrics: L1 count, Awarded count, Lost count, Cancelled count, Win Ratio
+   - PDF export option with full details (summary, daily breakdown, tender IDs by activity)
    - CSV download for individual and team reports
+   - Team comparison view (admin/manager only)
 
 ## Workflow Stages
 Tenders progress through the following stages after assignment:
