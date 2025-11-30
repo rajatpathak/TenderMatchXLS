@@ -246,6 +246,32 @@ export interface IStorage {
       totalActions: number;
     };
   }[]>;
+  
+  getMISReportForUser(username: string, role: string, startDate: Date, endDate: Date): Promise<{
+    user: { username: string; role: string };
+    summary: {
+      tendersMarkedNotRelevant: number;
+      tendersMarkedNotEligible: number;
+      tendersAssigned: number;
+      tendersSubmitted: number;
+      tendersReviewed: number;
+      clarificationsCreated: number;
+      clarificationsSubmitted: number;
+      presentationsScheduled: number;
+      presentationsCompleted: number;
+      resultsRecorded: number;
+    };
+    dailyBreakdown: {
+      date: string;
+      notRelevant: number;
+      notEligible: number;
+      assigned: number;
+      submitted: number;
+      reviewed: number;
+      clarifications: number;
+      presentations: number;
+    }[];
+  }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1782,6 +1808,121 @@ export class DatabaseStorage implements IStorage {
 
     // Sort by total actions descending
     return reports.sort((a, b) => b.summary.totalActions - a.summary.totalActions);
+  }
+  
+  async getMISReportForUser(username: string, role: string, startDate: Date, endDate: Date): Promise<{
+    user: { username: string; role: string };
+    summary: {
+      tendersMarkedNotRelevant: number;
+      tendersMarkedNotEligible: number;
+      tendersAssigned: number;
+      tendersSubmitted: number;
+      tendersReviewed: number;
+      clarificationsCreated: number;
+      clarificationsSubmitted: number;
+      presentationsScheduled: number;
+      presentationsCompleted: number;
+      resultsRecorded: number;
+    };
+    dailyBreakdown: {
+      date: string;
+      notRelevant: number;
+      notEligible: number;
+      assigned: number;
+      submitted: number;
+      reviewed: number;
+      clarifications: number;
+      presentations: number;
+    }[];
+  }> {
+    // Get all audit logs for this user within date range
+    const logs = await db
+      .select()
+      .from(auditLogs)
+      .where(and(
+        eq(auditLogs.userName, username),
+        gte(auditLogs.createdAt, startDate),
+        lt(auditLogs.createdAt, endDate)
+      ));
+
+    // Count activities by category/action
+    const notRelevantCount = logs.filter(l => l.action === 'override' && l.details?.includes('not_relevant')).length;
+    const notEligibleCount = logs.filter(l => l.action === 'override' && l.details?.includes('not_eligible')).length;
+    
+    // Get assignments created by or assigned to this user
+    const assignmentLogs = logs.filter(l => l.action === 'create' && l.category === 'assignment');
+    
+    // Get submissions
+    const submissionLogs = logs.filter(l => l.action === 'submit' || (l.action === 'stage_change' && l.details?.includes('submitted')));
+    
+    // Get reviews (stage changes to ready_for_review or approval actions)
+    const reviewLogs = logs.filter(l => l.action === 'review' || (l.action === 'stage_change' && l.details?.includes('ready_for_review')));
+    
+    // Get clarifications created by this user
+    const clarificationCreateLogs = logs.filter(l => l.action === 'create' && l.category === 'clarification');
+    const clarificationSubmitLogs = logs.filter(l => l.action === 'submit' && l.category === 'clarification');
+    
+    // Get presentations created/scheduled by this user
+    const presentationScheduledLogs = logs.filter(l => l.action === 'create' && l.category === 'presentation');
+    const presentationCompletedLogs = logs.filter(l => l.action === 'status_change' && l.category === 'presentation' && l.details?.includes('completed'));
+    
+    // Get results recorded
+    const resultsLogs = logs.filter(l => l.action === 'create' && l.category === 'tender_result');
+
+    // Build daily breakdown
+    const dailyBreakdown: {
+      date: string;
+      notRelevant: number;
+      notEligible: number;
+      assigned: number;
+      submitted: number;
+      reviewed: number;
+      clarifications: number;
+      presentations: number;
+    }[] = [];
+
+    // Generate dates in range
+    const currentDate = new Date(startDate);
+    while (currentDate < endDate) {
+      const dateStr = currentDate.toISOString().split('T')[0];
+      const nextDate = new Date(currentDate);
+      nextDate.setDate(nextDate.getDate() + 1);
+
+      const dayLogs = logs.filter(l => {
+        const logDate = new Date(l.createdAt!);
+        return logDate >= currentDate && logDate < nextDate;
+      });
+
+      dailyBreakdown.push({
+        date: dateStr,
+        notRelevant: dayLogs.filter(l => l.action === 'override' && l.details?.includes('not_relevant')).length,
+        notEligible: dayLogs.filter(l => l.action === 'override' && l.details?.includes('not_eligible')).length,
+        assigned: dayLogs.filter(l => l.action === 'create' && l.category === 'assignment').length,
+        submitted: dayLogs.filter(l => l.action === 'submit' || (l.action === 'stage_change' && l.details?.includes('submitted'))).length,
+        reviewed: dayLogs.filter(l => l.action === 'review' || (l.action === 'stage_change' && l.details?.includes('ready_for_review'))).length,
+        clarifications: dayLogs.filter(l => l.category === 'clarification').length,
+        presentations: dayLogs.filter(l => l.category === 'presentation').length,
+      });
+
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    return {
+      user: { username, role },
+      summary: {
+        tendersMarkedNotRelevant: notRelevantCount,
+        tendersMarkedNotEligible: notEligibleCount,
+        tendersAssigned: assignmentLogs.length,
+        tendersSubmitted: submissionLogs.length,
+        tendersReviewed: reviewLogs.length,
+        clarificationsCreated: clarificationCreateLogs.length,
+        clarificationsSubmitted: clarificationSubmitLogs.length,
+        presentationsScheduled: presentationScheduledLogs.length,
+        presentationsCompleted: presentationCompletedLogs.length,
+        resultsRecorded: resultsLogs.length,
+      },
+      dailyBreakdown,
+    };
   }
 }
 

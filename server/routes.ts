@@ -2607,10 +2607,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = req.user;
       
-      if (!user.teamMemberId) {
-        return res.status(400).json({ message: "No team member associated with this user" });
-      }
-      
       // Parse date range from query params (default to last 7 days)
       const endDate = req.query.endDate ? new Date(req.query.endDate) : new Date();
       const startDate = req.query.startDate 
@@ -2620,8 +2616,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Set end date to end of day
       endDate.setHours(23, 59, 59, 999);
       
-      const report = await storage.getMISReportForTeamMember(user.teamMemberId, startDate, endDate);
-      res.json(report);
+      // If user has a team member record, use that for full report
+      if (user.teamMemberId) {
+        const report = await storage.getMISReportForTeamMember(user.teamMemberId, startDate, endDate);
+        res.json(report);
+      } else {
+        // For users without team member records (like admin), query by username
+        const report = await storage.getMISReportForUser(user.username, user.role, startDate, endDate);
+        res.json(report);
+      }
     } catch (error) {
       console.error("Error fetching my MIS report:", error);
       res.status(500).json({ message: "Failed to fetch MIS report" });

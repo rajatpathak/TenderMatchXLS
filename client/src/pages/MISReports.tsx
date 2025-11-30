@@ -81,7 +81,8 @@ interface MemberReport {
 }
 
 interface IndividualReport {
-  teamMember: TeamMember;
+  teamMember?: TeamMember;
+  user?: { username: string; role: string };
   summary: {
     tendersMarkedNotRelevant: number;
     tendersMarkedNotEligible: number;
@@ -139,12 +140,7 @@ export default function MISReportsPage() {
     queryKey: ['/api/team-members'],
   });
 
-  const { data: myTeamMember } = useQuery<TeamMember>({
-    queryKey: ['/api/me/team-member'],
-  });
-
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'manager';
-  const hasTeamMember = myTeamMember && myTeamMember.id && myTeamMember.id > 0;
 
   const { startDate, endDate } = useMemo(() => {
     switch (dateRange) {
@@ -188,7 +184,6 @@ export default function MISReportsPage() {
       if (!res.ok) throw new Error('Failed to fetch my report');
       return res.json();
     },
-    enabled: hasTeamMember === true,
   });
 
   const { data: selectedMemberReport, isLoading: isLoadingMember } = useQuery<IndividualReport>({
@@ -326,17 +321,15 @@ export default function MISReportsPage() {
             </>
           )}
           
-          {hasTeamMember && (
-            <Button 
-              variant="outline" 
-              onClick={() => handleDownload('me')}
-              disabled={isDownloading}
-              data-testid="button-download-my-report"
-            >
-              {isDownloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
-              My Report
-            </Button>
-          )}
+          <Button 
+            variant="outline" 
+            onClick={() => handleDownload('me')}
+            disabled={isDownloading}
+            data-testid="button-download-my-report"
+          >
+            {isDownloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
+            My Report
+          </Button>
           
           {isAdmin && (
             <Button 
@@ -541,18 +534,7 @@ export default function MISReportsPage() {
         )}
 
         <TabsContent value="my" className="space-y-6">
-          {!hasTeamMember ? (
-            <Card>
-              <CardContent className="p-8 text-center">
-                <User className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                <h3 className="text-lg font-semibold mb-2">No Team Member Profile</h3>
-                <p className="text-muted-foreground">
-                  Your account is not linked to a team member profile. 
-                  {isAdmin && " As an admin, you can view team-wide reports in the Team Overview tab."}
-                </p>
-              </CardContent>
-            </Card>
-          ) : isLoadingMy ? (
+          {isLoadingMy ? (
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
               {Array(10).fill(0).map((_, i) => (
                 <Card key={i}>
