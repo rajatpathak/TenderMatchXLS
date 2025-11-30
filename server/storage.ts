@@ -225,6 +225,13 @@ export interface IStorage {
       reviewed: number;
       clarifications: number;
       presentations: number;
+      notRelevantIds: string[];
+      notEligibleIds: string[];
+      assignedIds: string[];
+      submittedIds: string[];
+      reviewedIds: string[];
+      clarificationIds: string[];
+      presentationIds: string[];
     }[];
   }>;
   
@@ -270,6 +277,13 @@ export interface IStorage {
       reviewed: number;
       clarifications: number;
       presentations: number;
+      notRelevantIds: string[];
+      notEligibleIds: string[];
+      assignedIds: string[];
+      submittedIds: string[];
+      reviewedIds: string[];
+      clarificationIds: string[];
+      presentationIds: string[];
     }[];
   }>;
 }
@@ -1595,6 +1609,13 @@ export class DatabaseStorage implements IStorage {
       reviewed: number;
       clarifications: number;
       presentations: number;
+      notRelevantIds: string[];
+      notEligibleIds: string[];
+      assignedIds: string[];
+      submittedIds: string[];
+      reviewedIds: string[];
+      clarificationIds: string[];
+      presentationIds: string[];
     }[];
   }> {
     const [teamMember] = await db.select().from(teamMembers).where(eq(teamMembers.id, teamMemberId));
@@ -1612,12 +1633,27 @@ export class DatabaseStorage implements IStorage {
         lt(auditLogs.createdAt, endDate)
       ));
 
+    // Helper function to extract tender ID from log
+    const extractTenderId = (log: typeof logs[0]): string => {
+      if (log.targetName) return log.targetName;
+      if (log.targetId) return log.targetId;
+      if (log.details) {
+        try {
+          const details = JSON.parse(log.details);
+          return details.t247Id || details.tenderId?.toString() || details.referenceId || '';
+        } catch {
+          return '';
+        }
+      }
+      return '';
+    };
+
     // Count activities by category/action
     const notRelevantCount = logs.filter(l => l.action === 'override' && l.details?.includes('not_relevant')).length;
     const notEligibleCount = logs.filter(l => l.action === 'override' && l.details?.includes('not_eligible')).length;
     
     // Get assignments created by or assigned to this user
-    const assignmentLogs = logs.filter(l => l.action === 'create' && l.category === 'assignment');
+    const assignmentLogs = logs.filter(l => (l.action === 'assign' || l.action === 'create') && l.category === 'assignment');
     
     // Get submissions
     const submissionLogs = logs.filter(l => l.action === 'submit' || (l.action === 'stage_change' && l.details?.includes('submitted')));
@@ -1682,7 +1718,7 @@ export class DatabaseStorage implements IStorage {
         lt(tenderResults.createdAt, endDate)
       ));
 
-    // Build daily breakdown
+    // Build daily breakdown with tender IDs
     const dailyBreakdown: {
       date: string;
       notRelevant: number;
@@ -1692,6 +1728,13 @@ export class DatabaseStorage implements IStorage {
       reviewed: number;
       clarifications: number;
       presentations: number;
+      notRelevantIds: string[];
+      notEligibleIds: string[];
+      assignedIds: string[];
+      submittedIds: string[];
+      reviewedIds: string[];
+      clarificationIds: string[];
+      presentationIds: string[];
     }[] = [];
 
     // Generate dates in range
@@ -1706,15 +1749,30 @@ export class DatabaseStorage implements IStorage {
         return logDate >= currentDate && logDate < nextDate;
       });
 
+      const notRelevantLogs = dayLogs.filter(l => l.action === 'override' && l.details?.includes('not_relevant'));
+      const notEligibleLogs = dayLogs.filter(l => l.action === 'override' && l.details?.includes('not_eligible'));
+      const assignedLogs = dayLogs.filter(l => (l.action === 'assign' || l.action === 'create') && l.category === 'assignment');
+      const submittedLogs = dayLogs.filter(l => l.action === 'submit' || (l.action === 'stage_change' && l.details?.includes('submitted')));
+      const reviewedLogs = dayLogs.filter(l => l.action === 'review' || (l.action === 'stage_change' && l.details?.includes('ready_for_review')));
+      const clarificationLogs = dayLogs.filter(l => l.category === 'clarification');
+      const presentationLogs = dayLogs.filter(l => l.category === 'presentation');
+
       dailyBreakdown.push({
         date: dateStr,
-        notRelevant: dayLogs.filter(l => l.action === 'override' && l.details?.includes('not_relevant')).length,
-        notEligible: dayLogs.filter(l => l.action === 'override' && l.details?.includes('not_eligible')).length,
-        assigned: dayLogs.filter(l => l.action === 'create' && l.category === 'assignment').length,
-        submitted: dayLogs.filter(l => l.action === 'submit' || (l.action === 'stage_change' && l.details?.includes('submitted'))).length,
-        reviewed: dayLogs.filter(l => l.action === 'review' || (l.action === 'stage_change' && l.details?.includes('ready_for_review'))).length,
-        clarifications: dayLogs.filter(l => l.category === 'clarification').length,
-        presentations: dayLogs.filter(l => l.category === 'presentation').length,
+        notRelevant: notRelevantLogs.length,
+        notEligible: notEligibleLogs.length,
+        assigned: assignedLogs.length,
+        submitted: submittedLogs.length,
+        reviewed: reviewedLogs.length,
+        clarifications: clarificationLogs.length,
+        presentations: presentationLogs.length,
+        notRelevantIds: notRelevantLogs.map(extractTenderId).filter(Boolean),
+        notEligibleIds: notEligibleLogs.map(extractTenderId).filter(Boolean),
+        assignedIds: assignedLogs.map(extractTenderId).filter(Boolean),
+        submittedIds: submittedLogs.map(extractTenderId).filter(Boolean),
+        reviewedIds: reviewedLogs.map(extractTenderId).filter(Boolean),
+        clarificationIds: clarificationLogs.map(extractTenderId).filter(Boolean),
+        presentationIds: presentationLogs.map(extractTenderId).filter(Boolean),
       });
 
       currentDate.setDate(currentDate.getDate() + 1);
@@ -1833,6 +1891,13 @@ export class DatabaseStorage implements IStorage {
       reviewed: number;
       clarifications: number;
       presentations: number;
+      notRelevantIds: string[];
+      notEligibleIds: string[];
+      assignedIds: string[];
+      submittedIds: string[];
+      reviewedIds: string[];
+      clarificationIds: string[];
+      presentationIds: string[];
     }[];
   }> {
     // Get all audit logs for this user within date range
@@ -1845,12 +1910,27 @@ export class DatabaseStorage implements IStorage {
         lt(auditLogs.createdAt, endDate)
       ));
 
+    // Helper function to extract tender ID from log
+    const extractTenderId = (log: typeof logs[0]): string => {
+      if (log.targetName) return log.targetName;
+      if (log.targetId) return log.targetId;
+      if (log.details) {
+        try {
+          const details = JSON.parse(log.details);
+          return details.t247Id || details.tenderId?.toString() || details.referenceId || '';
+        } catch {
+          return '';
+        }
+      }
+      return '';
+    };
+
     // Count activities by category/action
     const notRelevantCount = logs.filter(l => l.action === 'override' && l.details?.includes('not_relevant')).length;
     const notEligibleCount = logs.filter(l => l.action === 'override' && l.details?.includes('not_eligible')).length;
     
     // Get assignments created by or assigned to this user
-    const assignmentLogs = logs.filter(l => l.action === 'create' && l.category === 'assignment');
+    const assignmentLogs = logs.filter(l => (l.action === 'assign' || l.action === 'create') && l.category === 'assignment');
     
     // Get submissions
     const submissionLogs = logs.filter(l => l.action === 'submit' || (l.action === 'stage_change' && l.details?.includes('submitted')));
@@ -1869,7 +1949,7 @@ export class DatabaseStorage implements IStorage {
     // Get results recorded
     const resultsLogs = logs.filter(l => l.action === 'create' && l.category === 'tender_result');
 
-    // Build daily breakdown
+    // Build daily breakdown with tender IDs
     const dailyBreakdown: {
       date: string;
       notRelevant: number;
@@ -1879,6 +1959,13 @@ export class DatabaseStorage implements IStorage {
       reviewed: number;
       clarifications: number;
       presentations: number;
+      notRelevantIds: string[];
+      notEligibleIds: string[];
+      assignedIds: string[];
+      submittedIds: string[];
+      reviewedIds: string[];
+      clarificationIds: string[];
+      presentationIds: string[];
     }[] = [];
 
     // Generate dates in range
@@ -1893,15 +1980,30 @@ export class DatabaseStorage implements IStorage {
         return logDate >= currentDate && logDate < nextDate;
       });
 
+      const notRelevantLogs = dayLogs.filter(l => l.action === 'override' && l.details?.includes('not_relevant'));
+      const notEligibleLogs = dayLogs.filter(l => l.action === 'override' && l.details?.includes('not_eligible'));
+      const assignedLogs = dayLogs.filter(l => (l.action === 'assign' || l.action === 'create') && l.category === 'assignment');
+      const submittedLogs = dayLogs.filter(l => l.action === 'submit' || (l.action === 'stage_change' && l.details?.includes('submitted')));
+      const reviewedLogs = dayLogs.filter(l => l.action === 'review' || (l.action === 'stage_change' && l.details?.includes('ready_for_review')));
+      const clarificationLogs = dayLogs.filter(l => l.category === 'clarification');
+      const presentationLogs = dayLogs.filter(l => l.category === 'presentation');
+
       dailyBreakdown.push({
         date: dateStr,
-        notRelevant: dayLogs.filter(l => l.action === 'override' && l.details?.includes('not_relevant')).length,
-        notEligible: dayLogs.filter(l => l.action === 'override' && l.details?.includes('not_eligible')).length,
-        assigned: dayLogs.filter(l => l.action === 'create' && l.category === 'assignment').length,
-        submitted: dayLogs.filter(l => l.action === 'submit' || (l.action === 'stage_change' && l.details?.includes('submitted'))).length,
-        reviewed: dayLogs.filter(l => l.action === 'review' || (l.action === 'stage_change' && l.details?.includes('ready_for_review'))).length,
-        clarifications: dayLogs.filter(l => l.category === 'clarification').length,
-        presentations: dayLogs.filter(l => l.category === 'presentation').length,
+        notRelevant: notRelevantLogs.length,
+        notEligible: notEligibleLogs.length,
+        assigned: assignedLogs.length,
+        submitted: submittedLogs.length,
+        reviewed: reviewedLogs.length,
+        clarifications: clarificationLogs.length,
+        presentations: presentationLogs.length,
+        notRelevantIds: notRelevantLogs.map(extractTenderId).filter(Boolean),
+        notEligibleIds: notEligibleLogs.map(extractTenderId).filter(Boolean),
+        assignedIds: assignedLogs.map(extractTenderId).filter(Boolean),
+        submittedIds: submittedLogs.map(extractTenderId).filter(Boolean),
+        reviewedIds: reviewedLogs.map(extractTenderId).filter(Boolean),
+        clarificationIds: clarificationLogs.map(extractTenderId).filter(Boolean),
+        presentationIds: presentationLogs.map(extractTenderId).filter(Boolean),
       });
 
       currentDate.setDate(currentDate.getDate() + 1);

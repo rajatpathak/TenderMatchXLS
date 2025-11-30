@@ -1308,6 +1308,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Override reason is required" });
       }
 
+      // Get tender first to include T247 ID in audit log
+      const existingTender = await storage.getTenderById(tenderId);
+      if (!existingTender) {
+        return res.status(404).json({ message: "Tender not found" });
+      }
+
       const tender = await storage.updateTenderOverride(tenderId, {
         overrideStatus,
         overrideReason,
@@ -1317,6 +1323,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (!tender) {
         return res.status(404).json({ message: "Tender not found" });
+      }
+
+      // Log the override action for MIS reporting
+      try {
+        const user = req.user;
+        await storage.createAuditLog({
+          action: 'override',
+          category: 'tender',
+          userId: user?.id?.toString() || userId || '0',
+          userName: user?.claims?.email || user?.claims?.sub || userId || 'unknown',
+          targetId: tenderId.toString(),
+          targetName: existingTender.t247Id || `Tender #${tenderId}`,
+          details: JSON.stringify({
+            overrideStatus,
+            overrideReason,
+            overrideComment,
+            tenderId,
+            t247Id: existingTender.t247Id,
+          }),
+        });
+      } catch (logError) {
+        console.error("Error logging override action:", logError);
       }
 
       res.json(tender);
