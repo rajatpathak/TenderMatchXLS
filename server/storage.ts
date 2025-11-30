@@ -1625,8 +1625,8 @@ export class DatabaseStorage implements IStorage {
       .from(biddingSubmissions)
       .where(and(
         eq(biddingSubmissions.submittedBy, teamMemberId),
-        gte(biddingSubmissions.submittedAt, startDate),
-        lt(biddingSubmissions.submittedAt, endDate)
+        gte(biddingSubmissions.submissionDate, startDate),
+        lt(biddingSubmissions.submissionDate, endDate)
       ));
 
     const clarificationsCreatedCount = await db
