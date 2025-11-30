@@ -1297,7 +1297,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/tenders/:id/override', isAuthenticated, async (req: any, res) => {
     try {
       const tenderId = parseInt(req.params.id);
-      const userId = req.user?.claims?.sub;
+      const user = req.user;
+      const userId = user?.id || user?.username || '0';
       const { overrideStatus, overrideReason, overrideComment } = req.body;
 
       if (!overrideStatus || !['not_eligible', 'not_relevant'].includes(overrideStatus)) {
@@ -1318,7 +1319,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         overrideStatus,
         overrideReason,
         overrideComment: overrideComment || null,
-        overrideBy: userId || null,
+        overrideBy: userId?.toString() || null,
       });
 
       if (!tender) {
@@ -1327,12 +1328,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Log the override action for MIS reporting
       try {
-        const user = req.user;
         await storage.createAuditLog({
           action: 'override',
           category: 'tender',
-          userId: user?.id?.toString() || userId || '0',
-          userName: user?.claims?.email || user?.claims?.sub || userId || 'unknown',
+          userId: user?.id?.toString() || '0',
+          userName: user?.username || user?.email || 'unknown',
           targetId: tenderId.toString(),
           targetName: existingTender.t247Id || `Tender #${tenderId}`,
           details: JSON.stringify({

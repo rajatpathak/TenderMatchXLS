@@ -48,7 +48,7 @@ import {
   FileText,
 } from "lucide-react";
 import jsPDF from "jspdf";
-import "jspdf-autotable";
+import autoTable from "jspdf-autotable";
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns";
 import {
   BarChart,
@@ -294,7 +294,7 @@ export default function MISReportsPage() {
       ['Win Ratio', `${report.summary.winRatio || 0}%`],
     ];
     
-    (doc as any).autoTable({
+    autoTable(doc, {
       startY: 68,
       head: [summaryData[0]],
       body: summaryData.slice(1),
@@ -326,7 +326,7 @@ export default function MISReportsPage() {
       String(day.awarded || 0),
     ]);
     
-    (doc as any).autoTable({
+    autoTable(doc, {
       startY: finalY1 + 20,
       head: [dailyHeaders],
       body: dailyRows,
