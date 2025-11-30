@@ -1800,7 +1800,7 @@ export class DatabaseStorage implements IStorage {
     const totalResults = Number(resultsAwardedCount[0]?.count || 0) + Number(resultsLostCount[0]?.count || 0);
     const winRatio = totalResults > 0 ? Math.round((Number(resultsAwardedCount[0]?.count || 0) / totalResults) * 100) : 0;
 
-    // Build daily breakdown with tender IDs
+    // Build daily breakdown with tender IDs from actual data tables
     const dailyBreakdown: {
       date: string;
       notRelevant: number;
@@ -1823,48 +1823,146 @@ export class DatabaseStorage implements IStorage {
       awardedIds: string[];
     }[] = [];
 
-    // Generate dates in range
+    // Generate dates in range and query actual data for each day
     const currentDate = new Date(startDate);
     while (currentDate < endDate) {
       const dateStr = currentDate.toISOString().split('T')[0];
-      const nextDate = new Date(currentDate);
-      nextDate.setDate(nextDate.getDate() + 1);
+      const dayStart = new Date(currentDate);
+      const dayEnd = new Date(currentDate);
+      dayEnd.setDate(dayEnd.getDate() + 1);
 
+      // Query assignments for this day (where this team member is assigned to)
+      const dayAssignments = await db
+        .select({
+          id: tenderAssignments.id,
+          tenderId: tenderAssignments.tenderId,
+        })
+        .from(tenderAssignments)
+        .innerJoin(tenders, eq(tenderAssignments.tenderId, tenders.id))
+        .where(and(
+          eq(tenderAssignments.assignedTo, teamMemberId),
+          gte(tenderAssignments.assignedAt, dayStart),
+          lt(tenderAssignments.assignedAt, dayEnd)
+        ));
+      
+      const assignedIds = await Promise.all(dayAssignments.map(async (a) => {
+        const tender = await db.select({ t247Id: tenders.t247Id }).from(tenders).where(eq(tenders.id, a.tenderId)).limit(1);
+        return tender[0]?.t247Id || a.tenderId.toString();
+      }));
+
+      // Query submissions for this day
+      const daySubmissions = await db
+        .select({
+          id: biddingSubmissions.id,
+          assignmentId: biddingSubmissions.assignmentId,
+        })
+        .from(biddingSubmissions)
+        .where(and(
+          eq(biddingSubmissions.submittedBy, teamMemberId),
+          gte(biddingSubmissions.submissionDate, dayStart),
+          lt(biddingSubmissions.submissionDate, dayEnd)
+        ));
+      
+      const submittedIds = await Promise.all(daySubmissions.map(async (s) => {
+        const assignment = await db.select({ tenderId: tenderAssignments.tenderId }).from(tenderAssignments).where(eq(tenderAssignments.id, s.assignmentId)).limit(1);
+        if (assignment[0]) {
+          const tender = await db.select({ t247Id: tenders.t247Id }).from(tenders).where(eq(tenders.id, assignment[0].tenderId)).limit(1);
+          return tender[0]?.t247Id || assignment[0].tenderId.toString();
+        }
+        return s.id.toString();
+      }));
+
+      // Query clarifications created on this day by this team member
+      const dayClarifications = await db
+        .select({
+          id: clarifications.id,
+          referenceId: clarifications.referenceId,
+        })
+        .from(clarifications)
+        .where(and(
+          eq(clarifications.assignedTo, teamMemberId),
+          gte(clarifications.createdAt, dayStart),
+          lt(clarifications.createdAt, dayEnd)
+        ));
+      
+      const clarificationIds = dayClarifications.map(c => c.referenceId || c.id.toString());
+
+      // Query presentations scheduled on this day assigned to this team member
+      const dayPresentations = await db
+        .select({
+          id: presentations.id,
+          referenceId: presentations.referenceId,
+        })
+        .from(presentations)
+        .where(and(
+          eq(presentations.assignedTo, teamMemberId),
+          gte(presentations.createdAt, dayStart),
+          lt(presentations.createdAt, dayEnd)
+        ));
+      
+      const presentationIds = dayPresentations.map(p => p.referenceId || p.id.toString());
+
+      // Query tender results for L1 and Awarded on this day
+      const dayL1Results = await db
+        .select({
+          id: tenderResults.id,
+          referenceId: tenderResults.referenceId,
+        })
+        .from(tenderResults)
+        .where(and(
+          eq(tenderResults.updatedBy, teamMemberId),
+          eq(tenderResults.currentStatus, 'l1'),
+          gte(tenderResults.updatedAt, dayStart),
+          lt(tenderResults.updatedAt, dayEnd)
+        ));
+      
+      const l1Ids = dayL1Results.map(r => r.referenceId || r.id.toString());
+
+      const dayAwardedResults = await db
+        .select({
+          id: tenderResults.id,
+          referenceId: tenderResults.referenceId,
+        })
+        .from(tenderResults)
+        .where(and(
+          eq(tenderResults.updatedBy, teamMemberId),
+          eq(tenderResults.currentStatus, 'awarded'),
+          gte(tenderResults.updatedAt, dayStart),
+          lt(tenderResults.updatedAt, dayEnd)
+        ));
+      
+      const awardedIds = dayAwardedResults.map(r => r.referenceId || r.id.toString());
+
+      // Get override logs from audit for not relevant/not eligible (still use audit logs for this)
       const dayLogs = logs.filter(l => {
         const logDate = new Date(l.createdAt!);
-        return logDate >= currentDate && logDate < nextDate;
+        return logDate >= dayStart && logDate < dayEnd;
       });
 
       const notRelevantLogs = dayLogs.filter(l => l.action === 'override' && l.details?.includes('not_relevant'));
       const notEligibleLogs = dayLogs.filter(l => l.action === 'override' && l.details?.includes('not_eligible'));
-      const assignedLogs = dayLogs.filter(l => (l.action === 'assign' || l.action === 'create') && l.category === 'assignment');
-      const submittedLogs = dayLogs.filter(l => l.action === 'submit' || (l.action === 'stage_change' && l.details?.includes('submitted')));
       const reviewedLogs = dayLogs.filter(l => l.action === 'review' || (l.action === 'stage_change' && l.details?.includes('ready_for_review')));
-      const clarificationLogs = dayLogs.filter(l => l.category === 'clarification');
-      const presentationLogs = dayLogs.filter(l => l.category === 'presentation');
-      const dayL1Logs = dayLogs.filter(l => l.category === 'tender_result' && l.details?.includes('"l1"'));
-      const dayAwardedLogs = dayLogs.filter(l => l.category === 'tender_result' && l.details?.includes('"awarded"'));
 
       dailyBreakdown.push({
         date: dateStr,
         notRelevant: notRelevantLogs.length,
         notEligible: notEligibleLogs.length,
-        assigned: assignedLogs.length,
-        submitted: submittedLogs.length,
+        assigned: dayAssignments.length,
+        submitted: daySubmissions.length,
         reviewed: reviewedLogs.length,
-        clarifications: clarificationLogs.length,
-        presentations: presentationLogs.length,
-        l1: dayL1Logs.length,
-        awarded: dayAwardedLogs.length,
+        clarifications: dayClarifications.length,
+        presentations: dayPresentations.length,
+        l1: dayL1Results.length,
+        awarded: dayAwardedResults.length,
         notRelevantIds: notRelevantLogs.map(extractTenderId).filter(Boolean),
         notEligibleIds: notEligibleLogs.map(extractTenderId).filter(Boolean),
-        assignedIds: assignedLogs.map(extractTenderId).filter(Boolean),
-        submittedIds: submittedLogs.map(extractTenderId).filter(Boolean),
+        assignedIds,
+        submittedIds,
         reviewedIds: reviewedLogs.map(extractTenderId).filter(Boolean),
-        clarificationIds: clarificationLogs.map(extractTenderId).filter(Boolean),
-        presentationIds: presentationLogs.map(extractTenderId).filter(Boolean),
-        l1Ids: dayL1Logs.map(extractTenderId).filter(Boolean),
-        awardedIds: dayAwardedLogs.map(extractTenderId).filter(Boolean),
+        clarificationIds,
+        presentationIds,
+        l1Ids,
+        awardedIds,
       });
 
       currentDate.setDate(currentDate.getDate() + 1);
