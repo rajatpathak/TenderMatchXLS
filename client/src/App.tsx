@@ -94,7 +94,7 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
         <div className="flex flex-col flex-1 overflow-hidden">
           <NotificationMarquee />
           <HeaderContent />
-          <main className="flex-1 overflow-hidden bg-background">
+          <main className="flex-1 overflow-auto bg-background">
             {children}
           </main>
         </div>
